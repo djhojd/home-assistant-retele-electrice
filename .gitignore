@@ -1,0 +1,25 @@
+credentials.json
+.env
+.claude/
+__pycache__/
+*.pyc
+.venv/
+
+# Debug artifacts
+debug_pages/
+*.html
+!custom_components/**/*.html
+
+# One-off debug/test scripts (keep test_api.py)
+diagnose_login.py
+trace_login.py
+test_login_debug.py
+test_login_v2.py
+test_login_v3.py
+test_playwright.py
+test_vf_direct.py
+test_vf_postback.py
+test_pw_capture.py
+test_vf_final.py
+aura_payloads.json
+demo-data/

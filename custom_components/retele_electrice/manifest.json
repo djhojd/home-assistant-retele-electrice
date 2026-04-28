@@ -1,0 +1,11 @@
+{
+  "domain": "retele_electrice",
+  "name": "Rețele Electrice",
+  "codeowners": ["@djhojd"],
+  "config_flow": true,
+  "dependencies": ["recorder"],
+  "documentation": "https://github.com/djhojd/home-assistant-retele-electrice",
+  "iot_class": "cloud_polling",
+  "requirements": ["beautifulsoup4==4.12.3", "pytz>=2024.1"],
+  "version": "1.0.0"
+}
