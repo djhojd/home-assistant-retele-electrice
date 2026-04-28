@@ -284,9 +284,18 @@ class ReteleElectriceApi:
         if not raw:
             return []
         try:
-            records = json.loads(raw)
-            if isinstance(records, list):
-                return records
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                return parsed
+            if isinstance(parsed, dict):
+                error_code = parsed.get("errorCode")
+                if error_code:
+                    _LOGGER.warning(
+                        "Portal returned error code %s for POD %s",
+                        error_code,
+                        parsed.get("serviceDeliveryPoint", {}).get("podId", "?"),
+                    )
+                return []
         except json.JSONDecodeError:
             _LOGGER.warning("Failed to parse asyncResponse JSON: %s", raw[:200])
         return []
