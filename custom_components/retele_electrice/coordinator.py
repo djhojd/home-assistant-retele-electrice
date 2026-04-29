@@ -224,6 +224,7 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             name=name,
             source=DOMAIN,
             statistic_id=statistic_id,
+            unit_class="energy",
             unit_of_measurement="kWh",
         )
         _LOGGER.debug(
