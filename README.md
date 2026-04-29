@@ -105,17 +105,19 @@ logger:
 
 ## Development
 
+Local-only scripts, fixtures, demo CSVs, and credentials live in `dev/` (gitignored). Clone this repo and create the folder yourself; nothing in `dev/` is shipped.
+
 ### Running tests locally
 
 ```bash
-# Install uv (if not already installed)
-# https://docs.astral.sh/uv/
+# Install uv (if not already installed) — https://docs.astral.sh/uv/
 
-# Run the standalone API test
+# From the repository root:
+cd dev
 uv run test_api.py
 ```
 
-Requires a `credentials.json` file in the project root:
+Requires `dev/credentials.json`:
 
 ```json
 {
