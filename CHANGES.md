@@ -1,5 +1,78 @@
 # Rețele Electrice — Change Log
 
+## Session: 2026-04-30 — Statistics fix + recovery service
+
+### Critical bug fix
+
+`coordinator._import_statistics` was reading its own previous-run last `sum` as
+the baseline and then re-writing the entire current month on top of it. Because
+`async_add_external_statistics` overwrites by `start`, every cycle bumped every
+previously-recorded hour upward by ~1 month's consumption. After ~6 cycles the
+April 1 import row was showing `change=119.874 kWh` (real value: ~2.831).
+
+Fix: the method is now **append-only**. Each cycle reads the latest recorded
+`(start, sum)` and only inserts hours strictly newer than `last_ts`, with
+cumulative sums continuing from `last_sum`. Re-running on already-imported
+data is now a no-op.
+
+### New: `retele_electrice.clear_statistics` recovery service
+
+Permanently deletes the integration's external statistics so the user can
+recover from corrupted data and let the new logic re-import cleanly.
+
+```yaml
+service: retele_electrice.clear_statistics
+data:
+  confirm: true              # required, must literally be true
+  pod: RO005E513888412       # optional; defaults to all configured PODs
+```
+
+Discovers all `retele_electrice:<pod_lower>_*` statistic IDs under our DOMAIN
+source and clears them via the recorder's `async_clear_statistics` instance
+method.
+
+### Other changes
+
+| File | Change |
+|---|---|
+| `coordinator.py` | Append-only `_import_statistics` rewrite (the bug fix) |
+| `coordinator.py` | Added `unit_class="energy"` to silence HA 2026.11 deprecation |
+| `coordinator.py` | Recorder `start` is now a Unix-timestamp float in current HA — converted to tz-aware UTC datetime before comparison |
+| `services.py` | New module: `clear_statistics` service handler |
+| `services.yaml` | New file: service description for Developer Tools UI |
+| `__init__.py` | Idempotent registration of the service across config entries |
+| `const.py` | New helper `stat_id_prefix(pod)` shared between coordinator and service |
+
+### Verified working
+
+End-to-end recovery path tested against the live HA instance:
+
+1. Pre-fix April 1 import showed `change=119.874 kWh` (corrupt).
+2. Called `retele_electrice.clear_statistics` with `confirm: true` → both stat
+   IDs wiped, `total_count=0`.
+3. Pressed Sync Data button → coordinator re-fetched and re-imported.
+4. Post-fix April 1 import shows `change=2.831 kWh` ✓ (matches portal).
+5. Pressed Sync Data again → idempotent (no new rows, identical history).
+
+### Lessons captured for the design docs
+
+Two HA-API assumptions in the original design turned out to be wrong and
+required hot-fix commits during the verification step:
+
+- `async_clear_statistics` is **not** a free function in
+  `homeassistant.components.recorder.statistics`. It's a `@callback`
+  instance method on the `Recorder` class:
+  `get_instance(hass).async_clear_statistics(stat_ids)`.
+- `get_last_statistics` returns `start` as a **Unix-timestamp float** in
+  current HA, not as a `datetime`. Must be converted with
+  `datetime.fromtimestamp(value, tz=timezone.utc)` before comparing to a
+  tz-aware datetime.
+
+Both would have been caught by an automated test harness — adding one is
+recorded as future work below.
+
+---
+
 ## Session: 2026-04-28 (evening)
 
 ### API Rewrite — Working Authentication & Data Retrieval
@@ -49,16 +122,23 @@
 
 ## Pending / Next Steps
 
-1. **HA deployment test** — Deploy to HA and verify the Energy Dashboard integration
-   (statistics import, cumulative sum continuity across restarts).
+1. **Test harness** — Add `pytest-homeassistant-custom-component` so the validation
+   logic in `services.py` and the timestamp/baseline logic in `coordinator.py` can be
+   unit-tested. Both regressions of the 2026-04-30 hot-fixes (free-function vs
+   instance method, datetime vs float) would have been caught at CI time.
 
-2. **Duplicate statistics** — Consider adding a date-range guard so re-runs don't insert
-   duplicate hourly rows for days already in the recorder. Note: `async_add_external_statistics`
-   is idempotent on the `start` key, so this is safe but wastes API calls.
+2. **Reactive energy import** — Same `ValoriDiEnergia` method, two unused energy
+   types in the dropdown (inductive + capacitive). Adds power-factor monitoring data.
 
-3. **Historical backfill** — Implement an option to request data for a configurable
-   number of past days (e.g. last 90 days) on first setup, rather than the default
-   rolling 30-day window.
+3. **Meter readings fallback** — Use `/s/new-reading-archive-client` for non-smart
+   PODs (currently surfaces only the QN04 warning). See
+   `docs/investigations/2026-04-30-portal-data-sources.md`.
 
-4. **Session reuse** — The current implementation re-authenticates every update cycle.
-   Consider checking if the `sid` cookie is still valid before re-logging in.
+4. **Historical backfill** — Configurable number of past months to fetch on first
+   install, rather than just the current month.
+
+5. **Session reuse** — Currently re-authenticates every update cycle. Could check
+   `sid` cookie validity first.
+
+6. **Late-correction handling** — Optionally re-fetch the last N days on each cycle
+   to pick up portal-side corrections to already-recorded values.

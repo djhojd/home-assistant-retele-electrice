@@ -77,6 +77,21 @@ These appear automatically in the Energy Dashboard configuration.
 | `sensor.retele_electrice_<pod>_last_sync` | Sensor (timestamp) | Last successful data sync time |
 | `button.retele_electrice_<pod>_sync_button` | Button | Triggers a manual data refresh |
 
+## Services
+
+### `retele_electrice.clear_statistics`
+
+Permanently deletes the integration's imported energy statistics from the HA recorder. Use this to recover from corrupted cumulative sums or to force a clean re-import. After clearing, the next coordinator update (or a press of the **Sync Data** button) will re-fetch the current month and re-populate from scratch.
+
+```yaml
+service: retele_electrice.clear_statistics
+data:
+  confirm: true              # required, must literally be true
+  pod: RO005E513888412       # optional; defaults to all configured PODs
+```
+
+The service refuses to run unless `confirm: true` is passed, and rejects unknown PODs.
+
 ## Troubleshooting
 
 ### "Authentication failed"
