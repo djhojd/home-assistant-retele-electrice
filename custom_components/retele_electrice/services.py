@@ -9,10 +9,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 
-from homeassistant.components.recorder.statistics import (
-    async_clear_statistics,
-    list_statistic_ids,
-)
+from homeassistant.components.recorder.statistics import list_statistic_ids
 from homeassistant.components.recorder.util import get_instance
 
 from .const import DOMAIN, CONF_POD, stat_id_prefix
@@ -85,12 +82,12 @@ def async_register_services(hass: HomeAssistant) -> None:
             )
             return
 
-        await recorder.async_add_executor_job(
-            async_clear_statistics, hass, targets
-        )
+        # Recorder.async_clear_statistics is a @callback that queues a task on
+        # the recorder thread; it does not return a coroutine.
+        recorder.async_clear_statistics(targets)
 
         for stat_id in targets:
-            _LOGGER.info("Cleared %s", stat_id)
+            _LOGGER.info("Cleared %s (queued for deletion)", stat_id)
 
     hass.services.async_register(
         DOMAIN,
