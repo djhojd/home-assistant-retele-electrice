@@ -1,0 +1,23 @@
+clear_statistics:
+  name: Clear statistics
+  description: >-
+    Permanently delete all imported energy statistics for the integration.
+    Use this to recover from corrupted cumulative sums or to force a clean
+    re-import. After clearing, the next coordinator update (or a press of the
+    Sync Data button) will re-fetch and re-import the current month.
+  fields:
+    confirm:
+      name: Confirm
+      description: Must be set to true. Prevents accidental calls.
+      required: true
+      example: true
+      selector:
+        boolean:
+    pod:
+      name: POD
+      description: >-
+        Limit deletion to a single POD ID. Defaults to all configured PODs.
+      required: false
+      example: RO005E513888412
+      selector:
+        text:
