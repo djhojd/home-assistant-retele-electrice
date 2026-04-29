@@ -99,6 +99,9 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         export_id = f"{DOMAIN}:{self.pod.lower()}_export"
 
         # Per-stat baseline (last_ts, last_sum). `last_ts` is timezone-aware UTC.
+        # In recent HA versions, `start` is a Unix timestamp (float); older
+        # versions returned a datetime. Normalise to a tz-aware datetime so
+        # later comparisons against `start_aware` work in both cases.
         async def _baseline(stat_id: str) -> tuple[datetime | None, float]:
             result = await self.hass.async_add_executor_job(
                 get_last_statistics, self.hass, 1, stat_id, True, {"sum"}
@@ -106,7 +109,11 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             if not result or stat_id not in result or not result[stat_id]:
                 return None, 0.0
             row = result[stat_id][0]
-            last_ts = row.get("start")
+            raw_start = row.get("start")
+            if isinstance(raw_start, (int, float)):
+                last_ts = datetime.fromtimestamp(raw_start, tz=timezone.utc)
+            else:
+                last_ts = raw_start
             last_sum = row.get("sum") or 0.0
             return last_ts, float(last_sum)
 
