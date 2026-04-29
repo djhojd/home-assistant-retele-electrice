@@ -9,7 +9,13 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 
-from .const import DOMAIN, CONF_POD
+from homeassistant.components.recorder.statistics import (
+    async_clear_statistics,
+    list_statistic_ids,
+)
+from homeassistant.components.recorder.util import get_instance
+
+from .const import DOMAIN, CONF_POD, stat_id_prefix
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,11 +63,34 @@ def async_register_services(hass: HomeAssistant) -> None:
             _LOGGER.info("No PODs configured — nothing to clear")
             return
 
-        # TODO Task 5: discover stat_ids and call async_clear_statistics
-        _LOGGER.info(
-            "clear_statistics validated; pods=%s (clearing not yet implemented)",
-            target_pods,
+        recorder = get_instance(hass)
+
+        # list_statistic_ids is sync; run in executor.
+        all_stats = await recorder.async_add_executor_job(
+            list_statistic_ids, hass, None, None
         )
+
+        target_prefixes = tuple(stat_id_prefix(p) for p in target_pods)
+        targets = [
+            entry["statistic_id"]
+            for entry in all_stats
+            if entry.get("source") == DOMAIN
+            and entry["statistic_id"].startswith(target_prefixes)
+        ]
+
+        if not targets:
+            _LOGGER.info(
+                "No matching statistics found for pods=%s — nothing to do",
+                target_pods,
+            )
+            return
+
+        await recorder.async_add_executor_job(
+            async_clear_statistics, hass, targets
+        )
+
+        for stat_id in targets:
+            _LOGGER.info("Cleared %s", stat_id)
 
     hass.services.async_register(
         DOMAIN,
