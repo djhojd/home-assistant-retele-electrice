@@ -91,39 +91,30 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
     async def _import_statistics(self, records: list[dict[str, Any]]) -> None:
         """Parse API records and inject into HA Energy Dashboard.
 
-        Each record contains 24 hourly consumption values for one day.
-        We insert one StatisticData row per hour.
-
-        Args:
-            records: List of dicts from the Aura API, each with keys
-                     sampleDate, sampleValues, energyType.
+        Append-only: existing recorder rows are never overwritten. Each cycle
+        only inserts hours strictly newer than the latest already-recorded
+        `start`, with cumulative sums continuing from the last recorded `sum`.
         """
-        # Separate import (WI) and export (WE) records
-        import_stats: list[StatisticData] = []
-        export_stats: list[StatisticData] = []
-
-        # Get existing sums to maintain continuity across update cycles.
-        # get_last_statistics returns {statistic_id: [row_dict, ...]} or {}.
         import_id = f"{DOMAIN}:{self.pod.lower()}_import"
         export_id = f"{DOMAIN}:{self.pod.lower()}_export"
 
-        last_import = await self.hass.async_add_executor_job(
-            get_last_statistics, self.hass, 1, import_id, True, {"sum"}
-        )
-        last_export = await self.hass.async_add_executor_job(
-            get_last_statistics, self.hass, 1, export_id, True, {"sum"}
-        )
+        # Per-stat baseline (last_ts, last_sum). `last_ts` is timezone-aware UTC.
+        async def _baseline(stat_id: str) -> tuple[datetime | None, float]:
+            result = await self.hass.async_add_executor_job(
+                get_last_statistics, self.hass, 1, stat_id, True, {"sum"}
+            )
+            if not result or stat_id not in result or not result[stat_id]:
+                return None, 0.0
+            row = result[stat_id][0]
+            last_ts = row.get("start")
+            last_sum = row.get("sum") or 0.0
+            return last_ts, float(last_sum)
 
-        import_sum: float = (
-            last_import[import_id][0].get("sum") or 0.0
-            if import_id in last_import
-            else 0.0
-        )
-        export_sum: float = (
-            last_export[export_id][0].get("sum") or 0.0
-            if export_id in last_export
-            else 0.0
-        )
+        import_last_ts, import_sum = await _baseline(import_id)
+        export_last_ts, export_sum = await _baseline(export_id)
+
+        import_stats: list[StatisticData] = []
+        export_stats: list[StatisticData] = []
 
         for record in records:
             energy_type = record.get("energyType", "")
@@ -134,18 +125,15 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
                 _LOGGER.debug("Skipping incomplete record: %s", record)
                 continue
 
-            # Parse the day start from "DD/MM/YYYY HH:MM"
             try:
                 day_start = datetime.strptime(date_str, "%d/%m/%Y %H:%M")
             except ValueError:
-                # Try without time component
                 try:
                     day_start = datetime.strptime(date_str, "%d/%m/%Y")
                 except ValueError:
                     _LOGGER.warning("Could not parse date: %s", date_str)
                     continue
 
-            # Parse semicolon-delimited hourly values ("0,384000;0,277000;...")
             raw_values = values_str.split(";")
             hourly_values: list[float] = []
             for raw in raw_values:
@@ -161,19 +149,18 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             if not hourly_values:
                 continue
 
-            # Build one StatisticData per hour
             for hour_idx, value in enumerate(hourly_values):
                 start_naive = day_start + timedelta(hours=hour_idx)
-                # Localise to Bucharest, handling DST correctly
                 try:
                     start_aware = TZ_BUCHAREST.localize(start_naive, is_dst=None)
                 except pytz.exceptions.AmbiguousTimeError:
                     start_aware = TZ_BUCHAREST.localize(start_naive, is_dst=True)
                 except pytz.exceptions.NonExistentTimeError:
-                    # Skip the hour that doesn't exist (spring-forward DST gap)
                     continue
 
                 if energy_type == ENERGY_TYPE_IMPORT:
+                    if import_last_ts is not None and start_aware <= import_last_ts:
+                        continue
                     import_sum = round(import_sum + value, 6)
                     import_stats.append(
                         StatisticData(
@@ -183,6 +170,8 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
                         )
                     )
                 elif energy_type == ENERGY_TYPE_EXPORT:
+                    if export_last_ts is not None and start_aware <= export_last_ts:
+                        continue
                     export_sum = round(export_sum + value, 6)
                     export_stats.append(
                         StatisticData(
@@ -194,18 +183,15 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
                 else:
                     _LOGGER.debug("Unknown energyType %r — skipping", energy_type)
 
-        # Inject import statistics
         if import_stats:
             self._push_statistics(
-                statistic_id=f"{DOMAIN}:{self.pod.lower()}_import",
+                statistic_id=import_id,
                 name=f"Rețele Electrice {self.pod} Import",
                 stats=import_stats,
             )
-
-        # Inject export statistics (if any)
         if export_stats:
             self._push_statistics(
-                statistic_id=f"{DOMAIN}:{self.pod.lower()}_export",
+                statistic_id=export_id,
                 name=f"Rețele Electrice {self.pod} Export",
                 stats=export_stats,
             )
