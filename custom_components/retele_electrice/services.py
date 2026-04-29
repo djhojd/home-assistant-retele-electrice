@@ -31,10 +31,36 @@ def async_register_services(hass: HomeAssistant) -> None:
         return
 
     async def _handle_clear_statistics(call: ServiceCall) -> None:
-        """Stub — full implementation lands in a later task."""
-        _LOGGER.warning(
-            "clear_statistics called with %s — handler not yet implemented",
-            dict(call.data),
+        """Validate input then clear matching statistics."""
+        if call.data.get(ATTR_CONFIRM) is not True:
+            raise ServiceValidationError(
+                "confirm must be true to clear statistics"
+            )
+
+        requested_pod = call.data.get(ATTR_POD)
+        configured_pods = {
+            entry.data[CONF_POD]
+            for entry in hass.config_entries.async_entries(DOMAIN)
+            if CONF_POD in entry.data
+        }
+
+        if requested_pod is not None:
+            if requested_pod not in configured_pods:
+                raise ServiceValidationError(
+                    f"POD {requested_pod} is not configured for this integration"
+                )
+            target_pods = {requested_pod}
+        else:
+            target_pods = configured_pods
+
+        if not target_pods:
+            _LOGGER.info("No PODs configured — nothing to clear")
+            return
+
+        # TODO Task 5: discover stat_ids and call async_clear_statistics
+        _LOGGER.info(
+            "clear_statistics validated; pods=%s (clearing not yet implemented)",
+            target_pods,
         )
 
     hass.services.async_register(
