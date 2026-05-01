@@ -1,0 +1,419 @@
+{
+  "u_delimitare_type_info": [
+    "u_delimitare",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "u_delimitare": "JT",
+  "telecitit_type_info": [
+    "telecitit",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "telecitit": "N",
+  "racordare_type_info": [
+    "racordare",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "racordare": " - ",
+  "POD_type_info": [
+    "POD",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "false"
+  ],
+  "POD": "RO005E510252818",
+  "nume_client_type_info": [
+    "nume_client",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "nume_client": "HOJDA OLIMPIA",
+  "nr_cadastral_type_info": [
+    "nr_cadastral",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "nr_cadastral": null,
+  "kw_evacuata_type_info": [
+    "kw_evacuata",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "kw_evacuata": null,
+  "kw_aprobata_type_info": [
+    "kw_aprobata",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "kw_aprobata": "6.0",
+  "furnizor_type_info": [
+    "furnizor",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "furnizor_pre_type_info": [
+    "furnizor_pre",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "furnizor_pre": "CIGA ENERGY SA",
+  "furnizor": "NOVA POWER &amp; GAS S.A.",
+  "field_order_type_info": [
+    "POD",
+    "activ_furnizor_la",
+    "activ_consumator_la",
+    "activ",
+    "furnizor",
+    "cui",
+    "furnizor_pre",
+    "nume_client",
+    "adresa_client",
+    "adresa_locons",
+    "deconectat",
+    "kw_aprobata",
+    "kw_evacuata",
+    "racordare",
+    "delimitare",
+    "u_delimitare",
+    "carte_funciara",
+    "nr_cadastral",
+    "cft_description",
+    "cft_ou_description",
+    "cft_district_uo",
+    "telecitit",
+    "corectii",
+    "constant_group",
+    "aggregation_formula",
+    "cer_version",
+    "cer_date",
+    "atr_number",
+    "atr_date",
+    "compensation_mode",
+    "Contor"
+  ],
+  "delimitare_type_info": [
+    "delimitare",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "delimitare": "La bornele de iesire din contorul de energie electrica",
+  "deconectat_type_info": [
+    "deconectat",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "deconectat": null,
+  "cui_type_info": [
+    "cui",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "cui": "18680651",
+  "corectii_type_info": [
+    "corectii",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "corectii": "-",
+  "Contor_type_info": [
+    "Contor",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "-1",
+    "false"
+  ],
+  "Contor": [
+    {
+      "tipmontaj_cod_type_info": [
+        "tipmontaj_cod",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "tipmontaj_cod": "MD",
+      "seria_type_info": [
+        "seria",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "seria": "004000860528410",
+      "precizie_type_info": [
+        "precizie",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "precizie": "2",
+      "marca_type_info": [
+        "marca",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "marca": "ACE2000 : 5/60A, 230 V",
+      "kw_interval_type_info": [
+        "kw_interval",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "kw_interval": "N",
+      "field_order_type_info": [
+        "seria",
+        "marca",
+        "det_tip",
+        "data_montare",
+        "kw_interval",
+        "ee_orara",
+        "tipmontaj_cod",
+        "precizie",
+        "constanta"
+      ],
+      "ee_orara_type_info": [
+        "ee_orara",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "ee_orara": "N",
+      "det_tip_type_info": [
+        "det_tip",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "det_tip": "CONTOR_ELECTRONIC",
+      "data_montare_type_info": [
+        "data_montare",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "data_montare": "2010-08-27",
+      "constanta_type_info": [
+        "constanta",
+        "urn:cros:document:qp:types",
+        null,
+        "1",
+        "1",
+        "true"
+      ],
+      "constanta": "1.0",
+      "apex_schema_type_info": [
+        "urn:cros:document:qp:types",
+        "false",
+        "true"
+      ]
+    }
+  ],
+  "constant_group_type_info": [
+    "constant_group",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "constant_group": "1.0",
+  "compensation_mode_type_info": [
+    "compensation_mode",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "compensation_mode": null,
+  "cft_ou_description_type_info": [
+    "cft_ou_description",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "cft_ou_description": "UO MTJT TIMISOARA MUNICIPAL",
+  "cft_district_uo_type_info": [
+    "cft_district_uo",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "cft_district_uo": "TIMIS",
+  "cft_description_type_info": [
+    "cft_description",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "cft_description": "TIMISOARA ZONA ARADULUI",
+  "cer_version_type_info": [
+    "cer_version",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "cer_version": "1.0",
+  "cer_date_type_info": [
+    "cer_date",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "cer_date": "2014-06-12",
+  "carte_funciara_type_info": [
+    "carte_funciara",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "carte_funciara": null,
+  "atr_number_type_info": [
+    "atr_number",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "atr_number": "218038",
+  "atr_date_type_info": [
+    "atr_date",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "atr_date": "2001-11-02",
+  "apex_schema_type_info": [
+    "urn:cros:document:qp:types",
+    "false",
+    "true"
+  ],
+  "aggregation_formula_type_info": [
+    "aggregation_formula",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "aggregation_formula": "Energie activa livrata = Energie consumata",
+  "adresa_locons_type_info": [
+    "adresa_locons",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "adresa_locons": "STRADA Evutianu Sabin, Nr. 11, Bl. 90, Sc. B, Ap. 7, Loc. TIMISOARA, Jud. TIMIS",
+  "adresa_client_type_info": [
+    "adresa_client",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "adresa_client": "STRADA BELGRAD, Nr. 63, Ap. 2, Loc. DUMBRAVITA, Jud. TIMIS",
+  "activ_type_info": [
+    "activ",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "activ_furnizor_la_type_info": [
+    "activ_furnizor_la",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "activ_furnizor_la": "2021-03-15",
+  "activ_consumator_la_type_info": [
+    "activ_consumator_la",
+    "urn:cros:document:qp:types",
+    null,
+    "1",
+    "1",
+    "true"
+  ],
+  "activ_consumator_la": "2021-03-15",
+  "activ": "D"
+}
