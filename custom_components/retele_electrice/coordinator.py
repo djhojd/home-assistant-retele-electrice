@@ -19,6 +19,7 @@ from typing import Any
 import pytz
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.components.recorder.models import StatisticData, StatisticMeanType, StatisticMetaData
 from homeassistant.components.recorder.statistics import (
@@ -83,6 +84,52 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Authentication failed: {err}") from err
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
+
+    async def async_refresh_pod_info(self) -> None:
+        """Fetch POD info, persist to the config entry, dispatch a signal.
+
+        On failure: existing pod_info (if any) is preserved in entry.data;
+        the exception propagates so the caller (button handler / first-install
+        hook) can decide how to surface it.
+        """
+        _LOGGER.info("Refreshing POD info for %s", self.pod)
+        try:
+            new_info = await self.api.get_pod_info(self.pod)
+        except Exception:
+            _LOGGER.warning(
+                "POD info refresh failed for %s", self.pod, exc_info=True
+            )
+            raise
+
+        entry = getattr(self, "config_entry", None)
+        if entry is None:
+            _LOGGER.error(
+                "Coordinator has no config_entry; cannot persist POD info"
+            )
+            return
+
+        old_info = entry.data.get("pod_info") or {}
+        diff = sorted(
+            k
+            for k in set(old_info) | set(new_info)
+            if old_info.get(k) != new_info.get(k)
+        )
+        if old_info and diff:
+            _LOGGER.debug("POD info diff for %s: %s", self.pod, diff)
+
+        new_data = {
+            **entry.data,
+            "pod_info": new_info,
+            "pod_info_refreshed_at": datetime.now(tz=timezone.utc).isoformat(),
+        }
+        self.hass.config_entries.async_update_entry(entry, data=new_data)
+
+        signal = f"retele_electrice_pod_info_updated_{entry.entry_id}"
+        async_dispatcher_send(self.hass, signal)
+
+        _LOGGER.info(
+            "POD info refreshed for %s (%d fields)", self.pod, len(new_info)
+        )
 
     # ------------------------------------------------------------------
     # Statistics injection
