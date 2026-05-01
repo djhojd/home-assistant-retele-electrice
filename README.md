@@ -75,7 +75,9 @@ These appear automatically in the Energy Dashboard configuration.
 | Entity | Type | Description |
 |---|---|---|
 | `sensor.retele_electrice_<pod>_last_sync` | Sensor (timestamp) | Last successful data sync time |
+| `sensor.retele_electrice_<pod>_pod_info` | Sensor (diagnostic, timestamp) | POD metadata; state = last refresh time, attributes carry the contract and meter details |
 | `button.retele_electrice_<pod>_sync_button` | Button | Triggers a manual data refresh |
+| `button.retele_electrice_<pod>_refresh_pod_info` | Button (diagnostic) | Manually re-fetch POD info from the portal |
 
 ## Services
 
