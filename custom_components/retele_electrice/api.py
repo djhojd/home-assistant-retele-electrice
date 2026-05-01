@@ -21,6 +21,7 @@ Data retrieval:
   values in comma-decimal format (e.g. "0,384000;0,277000;...").
 """
 
+import html
 import json
 import logging
 import re
@@ -36,6 +37,82 @@ _LOGGER = logging.getLogger(__name__)
 BASE_URL = "https://contulmeu.reteleelectrice.ro"
 PAGE_URL_TEMPLATE = f"{BASE_URL}/s/new-load-curves-client?pod={{pod}}"
 VF_URL = f"{BASE_URL}/PED_ProxyCallWSAsync_Curve_VF"
+
+
+# Snake_case keys in the queryPOD response that should be coerced to float.
+# `precizie` and `constanta` are deliberately excluded — they're meter-level
+# metadata the integration treats as opaque strings.
+_POD_INFO_FLOAT_KEYS = frozenset({"kw_aprobata", "kw_evacuata", "constant_group"})
+
+# Sentinel string values the portal uses for "no value"; normalize to None.
+_POD_INFO_SENTINELS = frozenset({"", "-", " - "})
+
+# Salesforce SOAP metadata keys to strip from any dict before exposing to the integration.
+_POD_INFO_METADATA_KEYS = frozenset({"apex_schema_type_info", "field_order_type_info"})
+
+
+def _strip_metadata(d: dict[str, Any]) -> dict[str, Any]:
+    """Remove Salesforce SOAP schema metadata from a queryPOD response dict."""
+    return {
+        k: v
+        for k, v in d.items()
+        if not k.endswith("_type_info") and k not in _POD_INFO_METADATA_KEYS
+    }
+
+
+def _normalize_pod_value(key: str, value: Any) -> Any:
+    """Apply per-key normalisation for queryPOD values."""
+    if isinstance(value, str):
+        decoded = html.unescape(value).strip()
+        if decoded in _POD_INFO_SENTINELS:
+            return None
+        if key in _POD_INFO_FLOAT_KEYS:
+            try:
+                return float(decoded)
+            except ValueError:
+                return None
+        return decoded
+    if value is None and key in _POD_INFO_FLOAT_KEYS:
+        return None
+    return value
+
+
+def _parse_pod_info_response(raw: str) -> dict[str, Any]:
+    """Parse a queryPOD asyncResponse payload into a normalised dict.
+
+    The portal's response is a single JSON object with snake_case Romanian
+    keys plus per-key Salesforce SOAP metadata (`<key>_type_info`,
+    `apex_schema_type_info`, `field_order_type_info`). One or more meter
+    records are nested under a `Contor` array; the first is flattened into
+    the top-level dict with `meter_` prefixes. Sentinel values
+    ("", "-", " - ", whitespace-only) are normalised to None. HTML entities
+    are decoded. Numeric fields listed in `_POD_INFO_FLOAT_KEYS` are coerced
+    to float. Unknown keys are passed through.
+    """
+    parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError(
+            f"queryPOD response was not a JSON object: got {type(parsed).__name__}"
+        )
+
+    # Pull out the meter array before we strip metadata (Contor's items contain
+    # their own _type_info / apex_schema_type_info keys).
+    meters_raw = parsed.get("Contor") or []
+
+    # Strip metadata + normalise top-level keys/values.
+    cleaned = _strip_metadata(parsed)
+    cleaned.pop("Contor", None)
+    result: dict[str, Any] = {
+        k: _normalize_pod_value(k, v) for k, v in cleaned.items()
+    }
+
+    # Flatten the first meter (if any) with `meter_` prefix.
+    if meters_raw:
+        first_meter = _strip_metadata(meters_raw[0])
+        for k, v in first_meter.items():
+            result[f"meter_{k}"] = _normalize_pod_value(k, v)
+
+    return result
 
 
 class ReteleElectriceAuthError(Exception):
@@ -350,3 +427,46 @@ class ReteleElectriceApi:
         except Exception as exc:
             _LOGGER.error("Failed to fetch consumption data: %s", exc)
             raise
+
+    async def get_pod_info(self, pod: str) -> dict[str, Any]:
+        """Fetch POD metadata via the queryPOD method on the VF data proxy.
+
+        Returns a normalised dict (see _parse_pod_info_response). Caller MUST
+        have called login(pod) first.
+        """
+        session = await self._get_session()
+        vs = await self._get_vf_viewstate(session)
+
+        method_name = "queryPOD"
+        params = f"{pod},Client_Company"
+        _LOGGER.debug(
+            "POD-info request: methodN=%s params=%s", method_name, params
+        )
+
+        html_resp, _ = await self._vf_postback(session, vs, method_name, params)
+
+        # Extract the raw asyncResponse string. The existing
+        # _parse_async_response helper is shaped for the load-curves list
+        # response; the queryPOD payload is a single JSON object that the
+        # module-level _parse_pod_info_response handles.
+        m = re.search(
+            r'<span id="j_id0:j_id2:asyncResponse">\s*(.*?)\s*</span>',
+            html_resp,
+            re.DOTALL,
+        )
+        raw = m.group(1).strip() if m else None
+        if not raw:
+            raise ReteleElectriceAuthError(
+                f"queryPOD response was empty for POD {pod}"
+            )
+
+        _LOGGER.debug(
+            "POD-info response: %d chars, asyncResponse first 200: %s",
+            len(html_resp), raw[:200],
+        )
+        parsed = _parse_pod_info_response(raw)
+        _LOGGER.debug(
+            "POD-info parsed: %d fields, keys=%s",
+            len(parsed), sorted(parsed.keys()),
+        )
+        return parsed
