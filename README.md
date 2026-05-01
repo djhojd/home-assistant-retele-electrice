@@ -9,6 +9,7 @@ Custom component for [Home Assistant](https://www.home-assistant.io/) that impor
 - Injects the data as **external statistics** into the HA recorder, making it available in the **Energy Dashboard**
 - Provides a **"Last Sync" sensor** showing when data was last fetched
 - Provides a **"Sync Data" button** to trigger a manual refresh
+- Fetches **per-POD metadata** (customer, address, contracted kW, supplier, meter brand/serial/install date, etc.) on first install and exposes it as a diagnostic sensor + a manual "Refresh POD Info" button
 
 ## Requirements
 

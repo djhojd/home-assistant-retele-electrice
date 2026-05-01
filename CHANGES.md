@@ -17,6 +17,8 @@ Static contract and meter metadata (~20 fields: customer name, addresses, contra
 
 The per-POD device now carries the meter model (Romanian `marca`), serial (`seria`), and install date (`data_montare`) — sourced from POD info — plus a `configuration_url` link to the portal page. Falls back to minimal static values until the first POD-info fetch lands.
 
+The device fields are pushed via `device_registry.async_update_device()` from the coordinator after each refresh. Mutating `Entity._attr_device_info` after entity registration is a no-op — the device registry is HA's source of truth for the device row and only reads `DeviceInfo` once at entity creation.
+
 ### Logging
 
 All POD-info paths log at appropriate levels (DEBUG / INFO / WARNING) per `docs/plans/2026-05-01-pod-info-design.md` § Logging. Enable via `logger: { logs: { custom_components.retele_electrice: debug } }` for full trace.
@@ -31,8 +33,9 @@ All POD-info paths log at appropriate levels (DEBUG / INFO / WARNING) per `docs/
 | `__init__.py` | Non-blocking first-install POD info fetch |
 | `sensor.py` | New `PodInfoSensor` (diagnostic, dispatcher-driven) |
 | `button.py` | New `RefreshPodInfoButton` |
+| `coordinator.py` | New `_update_device_registry()` — pushes meter fields onto the HA device row |
 | `tests/test_api.py` | New file — parser regression test |
-| `tests/test_coordinator.py` | +3 tests for `async_refresh_pod_info` |
+| `tests/test_coordinator.py` | +5 tests (3 for `async_refresh_pod_info`, 2 for the device-registry update) |
 | `tests/fixtures/pod_info_RO005E510252818.json` | Captured API fixture |
 
 ---
