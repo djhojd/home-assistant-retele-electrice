@@ -101,5 +101,4 @@ class PodInfoSensor(SensorEntity):
 
     @callback
     def _on_updated(self):
-        self._attr_device_info = build_device_info(self.pod, self._entry.data)
         self.async_write_ha_state()

@@ -232,3 +232,63 @@ async def test_refresh_pod_info_failure_preserves_existing_data(
         await coordinator.async_refresh_pod_info()
 
     mock_hass.config_entries.async_update_entry.assert_not_called()
+
+
+async def test_refresh_pod_info_updates_device_registry(
+    coordinator, mock_hass, fake_api, monkeypatch
+):
+    """Meter fields from pod_info are pushed onto the HA device registry row."""
+    fake_api.get_pod_info = AsyncMock(return_value={
+        "nume_client": "TEST",
+        "meter_marca": "ACE2000 : 5/60A, 230 V",
+        "meter_seria": "004000860528410",
+        "meter_data_montare": "2010-08-27",
+    })
+
+    fake_entry = MagicMock()
+    fake_entry.data = {"pod": coordinator.pod}
+    fake_entry.entry_id = "test_entry_id"
+    coordinator.config_entry = fake_entry
+
+    fake_device = MagicMock()
+    fake_device.id = "fake_device_id"
+    fake_registry = MagicMock()
+    fake_registry.async_get_device = MagicMock(return_value=fake_device)
+    fake_registry.async_update_device = MagicMock()
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.dr.async_get",
+        lambda hass: fake_registry,
+    )
+
+    await coordinator.async_refresh_pod_info()
+
+    fake_registry.async_update_device.assert_called_once_with(
+        "fake_device_id",
+        model="ACE2000 : 5/60A, 230 V",
+        serial_number="004000860528410",
+        hw_version="2010-08-27",
+    )
+
+
+async def test_refresh_pod_info_skips_device_update_when_device_missing(
+    coordinator, mock_hass, fake_api, monkeypatch
+):
+    """If the device isn't in the registry yet, the registry call is skipped."""
+    fake_api.get_pod_info = AsyncMock(return_value={"meter_marca": "X"})
+
+    fake_entry = MagicMock()
+    fake_entry.data = {"pod": coordinator.pod}
+    fake_entry.entry_id = "test_entry_id"
+    coordinator.config_entry = fake_entry
+
+    fake_registry = MagicMock()
+    fake_registry.async_get_device = MagicMock(return_value=None)
+    fake_registry.async_update_device = MagicMock()
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.dr.async_get",
+        lambda hass: fake_registry,
+    )
+
+    await coordinator.async_refresh_pod_info()
+
+    fake_registry.async_update_device.assert_not_called()
