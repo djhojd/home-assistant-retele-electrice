@@ -141,6 +141,20 @@ Requires `dev/credentials.json`:
 }
 ```
 
+### Running the test suite
+
+The integration ships a mock-based regression suite under `tests/`. The tests
+import production modules (so import-time regressions surface immediately) but
+do not boot Home Assistant — runtime behavior is mocked with `unittest.mock`.
+
+```bash
+uv sync --extra dev
+uv run pytest tests/ -v
+```
+
+The same suite runs on every push and pull request via GitHub Actions
+(`.github/workflows/test.yml`). A red CI blocks merging to `main`.
+
 ## License
 
 MIT
