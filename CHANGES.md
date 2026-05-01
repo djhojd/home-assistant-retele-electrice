@@ -1,5 +1,42 @@
 # Rețele Electrice — Change Log
 
+## Session: 2026-05-01 — POD info feature
+
+### New: per-POD metadata fetched from `/s/new-pod-info-client`
+
+Static contract and meter metadata (~20 fields: customer name, addresses, contracted kW, supplier, meter serial / model / install date, status, etc.) is now fetched on integration first install and on demand via a new "Refresh POD Info" button per POD. Persisted in the config entry across restarts.
+
+### New entities (per POD)
+
+| Entity | Type | Notes |
+|---|---|---|
+| `sensor.retele_electrice_<pod>_pod_info` | Diagnostic timestamp sensor | State = last refresh time. Attributes = the 20 metadata fields. Hidden from default dashboards, visible on the device detail page. |
+| `button.retele_electrice_<pod>_refresh_pod_info` | Diagnostic button | On press: re-fetches POD info from the portal. |
+
+### Updated `DeviceInfo`
+
+The per-POD device now carries the meter model (Romanian `marca`), serial (`seria`), and install date (`data_montare`) — sourced from POD info — plus a `configuration_url` link to the portal page. Falls back to minimal static values until the first POD-info fetch lands.
+
+### Logging
+
+All POD-info paths log at appropriate levels (DEBUG / INFO / WARNING) per `docs/plans/2026-05-01-pod-info-design.md` § Logging. Enable via `logger: { logs: { custom_components.retele_electrice: debug } }` for full trace.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `api.py` | New `_parse_pod_info_response()` and `get_pod_info()` |
+| `coordinator.py` | New `async_refresh_pod_info()` — persists `entry.data["pod_info"]` + `entry.data["pod_info_refreshed_at"]`, dispatches a signal |
+| `_device.py` | New: `build_device_info()` shared helper |
+| `__init__.py` | Non-blocking first-install POD info fetch |
+| `sensor.py` | New `PodInfoSensor` (diagnostic, dispatcher-driven) |
+| `button.py` | New `RefreshPodInfoButton` |
+| `tests/test_api.py` | New file — parser regression test |
+| `tests/test_coordinator.py` | +3 tests for `async_refresh_pod_info` |
+| `tests/fixtures/pod_info_RO005E510252818.json` | Captured API fixture |
+
+---
+
 ## Session: 2026-04-30 — Statistics fix + recovery service
 
 ### Critical bug fix
