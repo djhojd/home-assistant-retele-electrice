@@ -28,6 +28,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api = ReteleElectriceApi(email, password)
     
     coordinator = ReteleElectriceCoordinator(hass, api, pod, update_interval)
+    coordinator.config_entry = entry
 
     # Fetch initial data
     await coordinator.async_config_entry_first_refresh()

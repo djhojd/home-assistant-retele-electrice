@@ -348,17 +348,23 @@ class ReteleElectriceApi:
         return html, viewstate
 
     @staticmethod
-    def _parse_async_response(html: str) -> list[dict[str, Any]]:
-        """Extract and parse JSON records from the VF asyncResponse span."""
+    def _extract_async_response(html_text: str) -> str | None:
+        """Return the raw text inside <span id="j_id0:j_id2:asyncResponse"> or None."""
         m = re.search(
             r'<span id="j_id0:j_id2:asyncResponse">\s*(.*?)\s*</span>',
-            html,
+            html_text,
             re.DOTALL,
         )
         if not m:
-            return []
+            return None
         raw = m.group(1).strip()
-        if not raw:
+        return raw or None
+
+    @staticmethod
+    def _parse_async_response(html: str) -> list[dict[str, Any]]:
+        """Extract and parse JSON records from the VF asyncResponse span."""
+        raw = ReteleElectriceApi._extract_async_response(html)
+        if raw is None:
             return []
         try:
             parsed = json.loads(raw)
@@ -449,12 +455,7 @@ class ReteleElectriceApi:
         # _parse_async_response helper is shaped for the load-curves list
         # response; the queryPOD payload is a single JSON object that the
         # module-level _parse_pod_info_response handles.
-        m = re.search(
-            r'<span id="j_id0:j_id2:asyncResponse">\s*(.*?)\s*</span>',
-            html_resp,
-            re.DOTALL,
-        )
-        raw = m.group(1).strip() if m else None
+        raw = self._extract_async_response(html_resp)
         if not raw:
             raise ReteleElectriceAuthError(
                 f"queryPOD response was empty for POD {pod}"

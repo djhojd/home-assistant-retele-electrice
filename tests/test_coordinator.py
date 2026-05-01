@@ -160,3 +160,75 @@ async def test_import_statistics_no_push_when_all_records_already_recorded(
     await coordinator._import_statistics(records)
 
     coordinator._push_statistics.assert_not_called()
+
+
+async def test_refresh_pod_info_persists_to_config_entry(
+    coordinator, mock_hass, fake_api
+):
+    """Successful fetch updates entry.data with pod_info + timestamp."""
+    pod_info = {
+        "nume_client": "TEST USER",
+        "kw_aprobata": 6.0,
+        "meter_seria": "001",
+    }
+    fake_api.get_pod_info = AsyncMock(return_value=pod_info)
+
+    fake_entry = MagicMock()
+    fake_entry.data = {"pod": coordinator.pod}
+    fake_entry.entry_id = "test_entry_id"
+    coordinator.config_entry = fake_entry
+
+    await coordinator.async_refresh_pod_info()
+
+    update_call = mock_hass.config_entries.async_update_entry.call_args
+    assert update_call is not None, "async_update_entry was not called"
+    new_data = update_call.kwargs["data"]
+    assert new_data["pod_info"] == pod_info
+    assert "pod_info_refreshed_at" in new_data
+    # ISO-8601 with timezone
+    assert "T" in new_data["pod_info_refreshed_at"]
+
+
+async def test_refresh_pod_info_dispatches_signal(
+    coordinator, mock_hass, fake_api, monkeypatch
+):
+    """Successful fetch fires the per-entry pod_info_updated signal."""
+    fake_api.get_pod_info = AsyncMock(return_value={"meter_seria": "X"})
+
+    fake_entry = MagicMock()
+    fake_entry.data = {"pod": coordinator.pod}
+    fake_entry.entry_id = "test_entry_id"
+    coordinator.config_entry = fake_entry
+
+    sent = []
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.async_dispatcher_send",
+        lambda hass, signal, *args: sent.append((signal, args)),
+    )
+
+    await coordinator.async_refresh_pod_info()
+
+    assert any(
+        signal == "retele_electrice_pod_info_updated_test_entry_id"
+        for signal, _ in sent
+    ), f"expected pod_info_updated signal not in {sent}"
+
+
+async def test_refresh_pod_info_failure_preserves_existing_data(
+    coordinator, mock_hass, fake_api
+):
+    """If api raises, existing entry.data['pod_info'] is left untouched."""
+    fake_api.get_pod_info = AsyncMock(side_effect=RuntimeError("portal down"))
+
+    fake_entry = MagicMock()
+    fake_entry.data = {
+        "pod": coordinator.pod,
+        "pod_info": {"nume_client": "OLD"},
+    }
+    fake_entry.entry_id = "test_entry_id"
+    coordinator.config_entry = fake_entry
+
+    with pytest.raises(RuntimeError, match="portal down"):
+        await coordinator.async_refresh_pod_info()
+
+    mock_hass.config_entries.async_update_entry.assert_not_called()
