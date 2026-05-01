@@ -1,0 +1,26 @@
+[project]
+name = "home-assistant-retele-electrice"
+version = "1.0.0"
+description = "Home Assistant custom integration for Retele Electrice (Romania)"
+requires-python = ">=3.13"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "homeassistant",
+    "beautifulsoup4==4.12.3",
+    "pytz>=2024.1",
+]
+
+[tool.uv]
+# HA pins lru-dict==1.3.0 exact, but that version has no cp313 wheels on either
+# Windows or Linux. 1.4.1 publishes cp313 wheels for both and is API-compatible
+# (the bump was a build-system upgrade only). Override unblocks installs without
+# requiring a C compiler on the host.
+override-dependencies = ["lru-dict>=1.4.1"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-ra"
