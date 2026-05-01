@@ -19,6 +19,7 @@ from typing import Any
 import pytz
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.components.recorder.models import StatisticData, StatisticMeanType, StatisticMetaData
@@ -124,12 +125,42 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         }
         self.hass.config_entries.async_update_entry(entry, data=new_data)
 
+        # HA's device registry is the source of truth for device fields; mutating
+        # entity._attr_device_info after registration is a no-op. Push meter
+        # fields here so the device card reflects fresh data.
+        self._update_device_registry(new_info)
+
         signal = f"retele_electrice_pod_info_updated_{entry.entry_id}"
         async_dispatcher_send(self.hass, signal)
 
         _LOGGER.info(
             "POD info refreshed for %s (%d fields)", self.pod, len(new_info)
         )
+
+    def _update_device_registry(self, pod_info: dict[str, Any]) -> None:
+        """Push meter fields from pod_info onto the device registry row."""
+        device_reg = dr.async_get(self.hass)
+        device = device_reg.async_get_device(identifiers={(DOMAIN, self.pod)})
+        if device is None:
+            _LOGGER.debug(
+                "Device for %s not in registry yet; skipping update", self.pod
+            )
+            return
+
+        updates: dict[str, str] = {}
+        if model := pod_info.get("meter_marca"):
+            updates["model"] = model
+        if serial := pod_info.get("meter_seria"):
+            updates["serial_number"] = serial
+        if hw := pod_info.get("meter_data_montare"):
+            updates["hw_version"] = hw
+
+        if updates:
+            device_reg.async_update_device(device.id, **updates)
+            _LOGGER.debug(
+                "Device registry updated for %s: %s",
+                self.pod, sorted(updates.keys()),
+            )
 
     # ------------------------------------------------------------------
     # Statistics injection
