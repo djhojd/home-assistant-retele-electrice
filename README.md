@@ -84,16 +84,19 @@ These appear automatically in the Energy Dashboard configuration.
 
 ### `retele_electrice.clear_statistics`
 
-Permanently deletes the integration's imported energy statistics from the HA recorder. Use this to recover from corrupted cumulative sums or to force a clean re-import. After clearing, the next coordinator update (or a press of the **Sync Data** button) will re-fetch the current month and re-populate from scratch.
+Permanently deletes the integration's imported energy statistics from the HA recorder. Use this to recover from corrupted cumulative sums or to force a clean re-import. After clearing, the next coordinator update (or a press of the **Sync Data** button) will re-fetch and re-populate.
 
 ```yaml
 service: retele_electrice.clear_statistics
 data:
   confirm: true              # required, must literally be true
   pod: RO005E513888412       # optional; defaults to all configured PODs
+  from: 2026-04-29           # optional; only delete rows on/after this date
 ```
 
 The service refuses to run unless `confirm: true` is passed, and rejects unknown PODs.
+
+If `from:` is provided, only rows where the timestamp is at or after midnight Bucharest local time of that date are deleted. Older rows survive. Useful for recovering a specific gap without losing months of history. The cumulative `sum` chain is rebuilt from the cutoff onward by the next sync.
 
 ## Troubleshooting
 

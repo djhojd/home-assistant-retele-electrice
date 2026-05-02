@@ -1,5 +1,40 @@
 # Rețele Electrice — Change Log
 
+## Session: 2026-05-02 — Late-arriving data fix
+
+### Bug
+
+Daily data for April 29 and April 30 was visible on the portal but missing from the HA recorder. Root cause in `api.py`: the integration always queried "first of current month → today". When the calendar rolled to May 1, queries dropped April from the request entirely. The smart meter typically uploads with 1-2 day lag, so April 29-30 landed on the portal on May 1 — by which time the integration had stopped asking for April.
+
+### Fix
+
+| File | Change |
+|---|---|
+| `api.py` | New `_default_date_range()` helper. Default `start_date` is now `min(first-of-current-month, today − 14d)`. Always includes the previous month's tail for the first 14 days of any new month. |
+| `services.py` | New optional `from:` field on `clear_statistics`. Wipes only rows with `start_ts >= midnight Bucharest of <from>`, preserving older history. Implementation: a custom `RecorderTask` issues a SQLAlchemy DELETE on `Statistics` + `StatisticsShortTerm` tables (filtered by `metadata_id` + `start_ts >= cutoff_ts`). `StatisticsMeta` is preserved so the next sync repopulates from the cutoff. |
+| `services.yaml` | Documents the new `from:` field. |
+| `tests/test_api.py` | +3 tests for the date-range helper. |
+| `tests/test_services.py` | +2 tests for the `from:` argument. |
+
+### Recovery for the existing gap
+
+```yaml
+service: retele_electrice.clear_statistics
+data:
+  confirm: true
+  pod: RO005E513888412
+  from: 2026-04-29
+```
+
+This wipes April 29 → present for the prosumer POD only and leaves older history intact. Then press the **Sync Data** button (or wait for the next scheduled sync). The newly-extended fetch range pulls April 18 → today, which includes the missing April 29-30 plus May data.
+
+### Verified post-recovery
+
+- `ha_get_history source=statistics period=day entity_ids=retele_electrice:foo_import` → April 29 + 30 daily rows present with portal-matching values (29/04 = 0.601 kWh import; 30/04 = 0.326 kWh import).
+- Cumulative `sum` monotonic across the full chain.
+
+---
+
 ## Session: 2026-05-01 — POD info feature
 
 ### New: per-POD metadata fetched from `/s/new-pod-info-client`
