@@ -388,3 +388,38 @@ async def test_backfill_history_partial_failure_keeps_collected_records(
     imported_records = coordinator._import_statistics.call_args.args[0]
     assert len(imported_records) == 1, "only month-1 records preserved"
     assert "Backfill: failed" in caplog.text
+
+
+from datetime import date as _real_date
+
+from custom_components.retele_electrice.coordinator import _iter_months
+
+
+@pytest.mark.parametrize("start, end, expected", [
+    # Year boundary: Dec 15 2025 -> Jan 10 2026
+    (
+        _real_date(2025, 12, 15), _real_date(2026, 1, 10),
+        [
+            (_real_date(2025, 12, 15), _real_date(2025, 12, 31)),
+            (_real_date(2026, 1, 1), _real_date(2026, 1, 10)),
+        ],
+    ),
+    # Single-day range
+    (
+        _real_date(2026, 5, 3), _real_date(2026, 5, 3),
+        [(_real_date(2026, 5, 3), _real_date(2026, 5, 3))],
+    ),
+    # start AFTER end -> empty
+    (
+        _real_date(2026, 5, 10), _real_date(2026, 5, 3),
+        [],
+    ),
+    # Single full month aligned to month boundaries
+    (
+        _real_date(2026, 3, 1), _real_date(2026, 3, 31),
+        [(_real_date(2026, 3, 1), _real_date(2026, 3, 31))],
+    ),
+])
+def test_iter_months(start, end, expected):
+    """_iter_months handles year-boundary, single-day, empty, and aligned cases."""
+    assert list(_iter_months(start, end)) == expected
