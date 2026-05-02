@@ -292,3 +292,99 @@ async def test_refresh_pod_info_skips_device_update_when_device_missing(
     await coordinator.async_refresh_pod_info()
 
     fake_registry.async_update_device.assert_not_called()
+
+
+async def test_backfill_history_wipes_then_imports_in_order(
+    coordinator, mock_hass, fake_api, monkeypatch
+):
+    """Backfill calls async_clear_statistics, then _import_statistics with
+    chronologically-ordered records covering install date → today."""
+    from datetime import date as _date
+
+    # Mock today() to return a fixed date so _iter_months is deterministic.
+    class _FakeDate(_date):
+        @classmethod
+        def today(cls):
+            return _date(2026, 5, 3)
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.date", _FakeDate
+    )
+
+    # Per-month: api returns one identifying record so we can assert ordering.
+    fake_api.get_consumption_data = AsyncMock(side_effect=[
+        [{"sampleDate": "01/03/2026 00:00", "sampleValues": "0,1", "energyType": "WI"}],
+        [{"sampleDate": "01/04/2026 00:00", "sampleValues": "0,2", "energyType": "WI"}],
+        [{"sampleDate": "01/05/2026 00:00", "sampleValues": "0,3", "energyType": "WI"}],
+    ])
+
+    fake_recorder = MagicMock()
+    fake_recorder.async_clear_statistics = MagicMock()
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.get_instance",
+        lambda hass: fake_recorder,
+    )
+
+    coordinator._import_statistics = AsyncMock()
+
+    # Track call order
+    calls = []
+    fake_recorder.async_clear_statistics.side_effect = (
+        lambda ids: calls.append(("wipe", tuple(sorted(ids))))
+    )
+    coordinator._import_statistics.side_effect = (
+        lambda recs: calls.append(("import", len(recs)))
+    )
+
+    await coordinator.async_backfill_history(_date(2026, 3, 1))
+
+    # Wipe must run before import.
+    assert calls[0][0] == "wipe", "wipe must run before import"
+    assert calls[0][1] == (EXPORT_ID, IMPORT_ID), \
+        "wipe should target both stat IDs (sorted)"
+    assert calls[1] == ("import", 3), "all 3 monthly records imported in one call"
+
+    # API called once per month, in chronological order.
+    assert fake_api.get_consumption_data.call_count == 3
+    api_calls = fake_api.get_consumption_data.call_args_list
+    assert api_calls[0].args[1] == _date(2026, 3, 1)
+    assert api_calls[1].args[1] == _date(2026, 4, 1)
+    assert api_calls[2].args[1] == _date(2026, 5, 1)
+
+
+async def test_backfill_history_partial_failure_keeps_collected_records(
+    coordinator, mock_hass, fake_api, monkeypatch, caplog
+):
+    """If api raises mid-loop, accumulated records are still imported and
+    a WARNING is logged."""
+    from datetime import date as _date
+    import logging
+
+    class _FakeDate(_date):
+        @classmethod
+        def today(cls):
+            return _date(2026, 5, 3)
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.date", _FakeDate
+    )
+
+    fake_api.get_consumption_data = AsyncMock(side_effect=[
+        [{"sampleDate": "01/03/2026 00:00", "sampleValues": "0,1", "energyType": "WI"}],
+        RuntimeError("portal hiccup"),
+    ])
+
+    fake_recorder = MagicMock()
+    fake_recorder.async_clear_statistics = MagicMock()
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.get_instance",
+        lambda hass: fake_recorder,
+    )
+
+    coordinator._import_statistics = AsyncMock()
+
+    with caplog.at_level(logging.WARNING):
+        await coordinator.async_backfill_history(_date(2026, 3, 1))
+
+    coordinator._import_statistics.assert_called_once()
+    imported_records = coordinator._import_statistics.call_args.args[0]
+    assert len(imported_records) == 1, "only month-1 records preserved"
+    assert "Backfill: failed" in caplog.text
