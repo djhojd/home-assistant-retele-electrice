@@ -2,15 +2,24 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
+from datetime import datetime, time, timezone
 
+import pytz
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import ServiceValidationError
 import homeassistant.helpers.config_validation as cv
 
+from homeassistant.components.recorder.db_schema import (
+    Statistics,
+    StatisticsMeta,
+    StatisticsShortTerm,
+)
 from homeassistant.components.recorder.statistics import list_statistic_ids
-from homeassistant.components.recorder.util import get_instance
+from homeassistant.components.recorder.tasks import RecorderTask
+from homeassistant.components.recorder.util import get_instance, session_scope
 
 from .const import DOMAIN, CONF_POD, stat_id_prefix
 
@@ -19,13 +28,46 @@ _LOGGER = logging.getLogger(__name__)
 SERVICE_CLEAR_STATISTICS = "clear_statistics"
 ATTR_CONFIRM = "confirm"
 ATTR_POD = "pod"
+ATTR_FROM = "from"
+
+TZ_BUCHAREST = pytz.timezone("Europe/Bucharest")
 
 CLEAR_STATISTICS_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_CONFIRM): cv.boolean,
         vol.Optional(ATTR_POD): cv.string,
+        vol.Optional(ATTR_FROM): cv.date,
     }
 )
+
+
+@dataclass(slots=True)
+class ClearStatisticsRangeTask(RecorderTask):
+    """Delete statistics rows from cutoff_ts onward for the given statistic_ids.
+
+    Runs on the recorder thread. Deletes from `Statistics` and
+    `StatisticsShortTerm` tables only (NOT `StatisticsMeta`) so the
+    metadata survives for the next sync to repopulate from the cutoff.
+    """
+
+    statistic_ids: list[str]
+    cutoff_ts: float
+
+    def run(self, instance) -> None:
+        with session_scope(session=instance.get_session()) as session:
+            metadata_ids = [
+                row.id
+                for row in session.query(StatisticsMeta.id)
+                .filter(StatisticsMeta.statistic_id.in_(self.statistic_ids))
+                .all()
+            ]
+            if not metadata_ids:
+                return
+            for table in (Statistics, StatisticsShortTerm):
+                session.query(table).filter(
+                    table.metadata_id.in_(metadata_ids),
+                    table.start_ts >= self.cutoff_ts,
+                ).delete(synchronize_session=False)
 
 
 def async_register_services(hass: HomeAssistant) -> None:
@@ -82,12 +124,30 @@ def async_register_services(hass: HomeAssistant) -> None:
             )
             return
 
-        # Recorder.async_clear_statistics is a @callback that queues a task on
-        # the recorder thread; it does not return a coroutine.
-        recorder.async_clear_statistics(targets)
+        from_date = call.data.get(ATTR_FROM)
+        if from_date is None:
+            # Recorder.async_clear_statistics is a @callback that queues a task
+            # on the recorder thread; it does not return a coroutine.
+            recorder.async_clear_statistics(targets)
+            for stat_id in targets:
+                _LOGGER.info("Cleared %s (queued for deletion)", stat_id)
+            return
 
-        for stat_id in targets:
-            _LOGGER.info("Cleared %s (queued for deletion)", stat_id)
+        cutoff = TZ_BUCHAREST.localize(
+            datetime.combine(from_date, time.min)
+        ).astimezone(timezone.utc)
+        cutoff_ts = cutoff.timestamp()
+        recorder.queue_task(
+            ClearStatisticsRangeTask(
+                statistic_ids=list(targets),
+                cutoff_ts=cutoff_ts,
+            )
+        )
+        _LOGGER.info(
+            "Range-clearing %d statistic(s) from cutoff %s onwards",
+            len(targets),
+            cutoff.isoformat(),
+        )
 
     hass.services.async_register(
         DOMAIN,

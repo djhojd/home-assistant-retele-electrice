@@ -5,9 +5,11 @@ a mocked HomeAssistant and a mocked recorder.
 """
 from __future__ import annotations
 
+from datetime import date, datetime, time, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytz
 from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.retele_electrice.const import CONF_POD, DOMAIN
@@ -121,3 +123,71 @@ async def test_clear_statistics_clears_all_configured_pods(mock_hass):
     assert sorted(cleared_ids) == sorted(
         [f"{DOMAIN}:{pod_a.lower()}_import", f"{DOMAIN}:{pod_b.lower()}_export"]
     )
+
+
+async def test_clear_statistics_with_from_date_queues_range_task(mock_hass):
+    """confirm=True + pod=POD_A + from=2026-04-29 -> queue_task called with
+    ClearStatisticsRangeTask carrying the expected stat_ids and cutoff_ts.
+
+    cutoff = midnight Bucharest of 2026-04-29 -> 2026-04-28T21:00:00+00:00 (DST).
+    """
+    pod = "RO005E_AAA"
+    mock_hass.config_entries.async_entries.return_value = [_make_entry(pod)]
+
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(
+        return_value=[
+            {"statistic_id": f"{DOMAIN}:{pod.lower()}_import", "source": DOMAIN},
+            {"statistic_id": f"{DOMAIN}:{pod.lower()}_export", "source": DOMAIN},
+        ]
+    )
+    mock_recorder.async_clear_statistics = MagicMock()
+    mock_recorder.queue_task = MagicMock()
+
+    with patch(
+        "custom_components.retele_electrice.services.get_instance",
+        return_value=mock_recorder,
+    ):
+        handler = _capture_handler(mock_hass)
+        await handler(_make_call({
+            "confirm": True,
+            "pod": pod,
+            "from": date(2026, 4, 29),
+        }))
+
+    mock_recorder.async_clear_statistics.assert_not_called()
+    mock_recorder.queue_task.assert_called_once()
+    queued = mock_recorder.queue_task.call_args.args[0]
+    assert sorted(queued.statistic_ids) == sorted(
+        [f"{DOMAIN}:{pod.lower()}_import", f"{DOMAIN}:{pod.lower()}_export"]
+    )
+    expected_cutoff = pytz.timezone("Europe/Bucharest").localize(
+        datetime.combine(date(2026, 4, 29), time.min)
+    ).astimezone(timezone.utc).timestamp()
+    assert queued.cutoff_ts == expected_cutoff
+
+
+async def test_clear_statistics_without_from_uses_wipe_all_path(mock_hass):
+    """Regression: no `from` arg -> existing async_clear_statistics path is taken.
+
+    queue_task must NOT be called.
+    """
+    pod = "RO005E_AAA"
+    mock_hass.config_entries.async_entries.return_value = [_make_entry(pod)]
+
+    mock_recorder = MagicMock()
+    mock_recorder.async_add_executor_job = AsyncMock(
+        return_value=[{"statistic_id": f"{DOMAIN}:{pod.lower()}_import", "source": DOMAIN}]
+    )
+    mock_recorder.async_clear_statistics = MagicMock()
+    mock_recorder.queue_task = MagicMock()
+
+    with patch(
+        "custom_components.retele_electrice.services.get_instance",
+        return_value=mock_recorder,
+    ):
+        handler = _capture_handler(mock_hass)
+        await handler(_make_call({"confirm": True, "pod": pod}))
+
+    mock_recorder.async_clear_statistics.assert_called_once()
+    mock_recorder.queue_task.assert_not_called()
