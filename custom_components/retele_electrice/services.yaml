@@ -21,3 +21,13 @@ clear_statistics:
       example: RO005E513888412
       selector:
         text:
+    from:
+      name: From date
+      description: >-
+        Only delete statistics rows where start ≥ midnight of this date
+        (Bucharest local time). If omitted, deletes all rows for the
+        targeted POD(s). Format: YYYY-MM-DD.
+      required: false
+      example: "2026-04-29"
+      selector:
+        date:
