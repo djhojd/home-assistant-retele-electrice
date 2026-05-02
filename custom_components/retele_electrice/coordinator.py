@@ -175,6 +175,9 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             f"{DOMAIN}:{self.pod.lower()}_export",
         ]
         recorder = get_instance(self.hass)
+        # Recorder.async_clear_statistics is a @callback that queues the wipe on
+        # the recorder thread; the subsequent _import_statistics will queue its
+        # writes after, so FIFO ordering guarantees wipe happens-before import.
         recorder.async_clear_statistics(targets)
 
         today = date.today()
