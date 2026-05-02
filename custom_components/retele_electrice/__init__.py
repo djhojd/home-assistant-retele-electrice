@@ -14,6 +14,28 @@ from .services import async_register_services
 
 _LOGGER = logging.getLogger(__name__)
 
+
+async def _has_existing_stats(hass: HomeAssistant, pod: str) -> bool:
+    """Return True iff the recorder has any retele_electrice:<pod>_* row.
+
+    Mirrors the discovery pattern used by services.py: list all stat IDs
+    once, filter by our DOMAIN source and the POD's prefix.
+    """
+    from homeassistant.components.recorder.statistics import list_statistic_ids
+    from homeassistant.components.recorder.util import get_instance
+    from .const import stat_id_prefix
+
+    recorder = get_instance(hass)
+    all_stats = await recorder.async_add_executor_job(
+        list_statistic_ids, hass, None, None
+    )
+    prefix = stat_id_prefix(pod)
+    return any(
+        e.get("source") == DOMAIN and e["statistic_id"].startswith(prefix)
+        for e in all_stats
+    )
+
+
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON]
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -64,6 +86,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "Loaded persisted POD info for %s (refreshed_at=%s)",
             pod, entry.data.get("pod_info_refreshed_at"),
         )
+
+    # First-install hook (part 2): auto-backfill the full meter history if
+    #  - the POD has no existing stats, AND
+    #  - pod_info has the install date (either already, or once it lands).
+    # Non-blocking — integration setup completes immediately even if the
+    # backfill is slow or fails.
+    async def _maybe_initial_backfill():
+        # Wait for pod_info if not yet on entry.data.
+        if "pod_info" not in entry.data:
+            from homeassistant.helpers.dispatcher import async_dispatcher_connect
+            import asyncio
+            ready = asyncio.Event()
+            signal = f"retele_electrice_pod_info_updated_{entry.entry_id}"
+            unsub = async_dispatcher_connect(hass, signal, lambda *_: ready.set())
+            try:
+                await asyncio.wait_for(ready.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                _LOGGER.debug(
+                    "Backfill: pod_info_updated signal never fired for %s; "
+                    "skipping auto-backfill", pod,
+                )
+                return
+            finally:
+                unsub()
+
+        pod_info = entry.data.get("pod_info") or {}
+        install_date_str = pod_info.get("meter_data_montare")
+        if not install_date_str:
+            _LOGGER.debug(
+                "Backfill: no meter_data_montare for %s; skipping auto-backfill",
+                pod,
+            )
+            return
+
+        if await _has_existing_stats(hass, pod):
+            _LOGGER.debug(
+                "Backfill: POD %s already has stats; skipping auto-backfill",
+                pod,
+            )
+            return
+
+        from datetime import date
+        try:
+            await coordinator.async_backfill_history(
+                date.fromisoformat(install_date_str)
+            )
+        except Exception as err:
+            _LOGGER.warning(
+                "Backfill: auto-trigger failed for %s: %s. Run "
+                "retele_electrice.backfill_history manually to retry.",
+                pod, err, exc_info=True,
+            )
+
+    hass.async_create_task(_maybe_initial_backfill())
 
     async_register_services(hass)
 
