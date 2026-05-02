@@ -1,11 +1,15 @@
 """Tests for ReteleElectriceApi parsing helpers."""
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
 
-from custom_components.retele_electrice.api import _parse_pod_info_response
+from custom_components.retele_electrice.api import (
+    _default_date_range,
+    _parse_pod_info_response,
+)
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -51,3 +55,24 @@ def test_parse_pod_info_response_returns_normalized_dict():
 
     # Meter section's _type_info keys also stripped
     assert not any(k.endswith("_type_info") for k in result if k.startswith("meter_"))
+
+
+def test_default_date_range_early_in_month_uses_lookback_buffer():
+    """Day 2 of month → buffer wins, start = today − 14 days."""
+    start, end = _default_date_range(end_date=date(2026, 5, 2))
+    assert end == date(2026, 5, 2)
+    assert start == date(2026, 4, 18)
+
+
+def test_default_date_range_late_in_month_uses_first_of_month():
+    """Day 20 of month → first-of-month wins, buffer doesn't extend further."""
+    start, end = _default_date_range(end_date=date(2026, 5, 20))
+    assert end == date(2026, 5, 20)
+    assert start == date(2026, 5, 1)
+
+
+def test_default_date_range_at_day_15_picks_first_of_month():
+    """Day 15 (boundary): both candidates yield May 1; first-of-month wins."""
+    start, end = _default_date_range(end_date=date(2026, 5, 15))
+    assert end == date(2026, 5, 15)
+    assert start == date(2026, 5, 1)

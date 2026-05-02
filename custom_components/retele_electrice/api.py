@@ -119,6 +119,24 @@ class ReteleElectriceAuthError(Exception):
     """Raised when authentication fails."""
 
 
+def _default_date_range(end_date: date | None = None) -> tuple[date, date]:
+    """Default fetch window: covers the full current calendar month and at
+    least the last 14 days, whichever is wider.
+
+    Why: the smart meter's data uploads typically lag by 1-2 days. If we
+    only query "first of current month → today", late-arriving data from
+    the previous month is permanently missed once the calendar rolls over.
+    Extending start backwards by ≥14 days ensures the previous month's
+    tail re-appears in the query for the first 14 days of the new month.
+    """
+    if end_date is None:
+        end_date = date.today()
+    return (
+        min(end_date.replace(day=1), end_date - timedelta(days=14)),
+        end_date,
+    )
+
+
 class ReteleElectriceApi:
     """Async API Client for Rețele Electrice portal."""
 
@@ -396,10 +414,12 @@ class ReteleElectriceApi:
             sampleValues: str  semicolon-separated floats (e.g. "0,384000;0,277000;...")
             energyType  : str  "WI" (withdraw/import) | "WE" (export)
         """
-        if end_date is None:
-            end_date = date.today()
-        if start_date is None:
-            start_date = end_date.replace(day=1)
+        if start_date is None or end_date is None:
+            defaults_start, defaults_end = _default_date_range(end_date)
+            if start_date is None:
+                start_date = defaults_start
+            if end_date is None:
+                end_date = defaults_end
 
         session = await self._get_session()
 
