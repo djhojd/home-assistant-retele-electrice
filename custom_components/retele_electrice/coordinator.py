@@ -13,7 +13,8 @@ Data format returned by the Aura API (based on network captures):
 Each day has exactly 24 hourly sample values. Values are comma-decimal floats.
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from collections.abc import Iterator
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import pytz
@@ -27,6 +28,7 @@ from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
 )
+from homeassistant.components.recorder.util import get_instance
 
 from .api import ReteleElectriceApi, ReteleElectriceAuthError
 from .const import DOMAIN
@@ -36,6 +38,25 @@ _LOGGER = logging.getLogger(__name__)
 TZ_BUCHAREST = pytz.timezone("Europe/Bucharest")
 ENERGY_TYPE_IMPORT = "WI"
 ENERGY_TYPE_EXPORT = "WE"
+
+
+def _iter_months(start: date, end: date) -> Iterator[tuple[date, date]]:
+    """Yield (month_start, month_end) tuples covering [start, end].
+
+    The first tuple's month_start is `start` itself (may be mid-month).
+    The last tuple's month_end is `end` (may be mid-month).
+    All intermediate months go from the 1st to the last day of that month.
+    """
+    cursor = start
+    while cursor <= end:
+        if cursor.month == 12:
+            next_month_first = cursor.replace(year=cursor.year + 1, month=1, day=1)
+        else:
+            next_month_first = cursor.replace(month=cursor.month + 1, day=1)
+        last_of_month = next_month_first - timedelta(days=1)
+        chunk_end = min(last_of_month, end)
+        yield (cursor, chunk_end)
+        cursor = next_month_first
 
 
 class ReteleElectriceCoordinator(DataUpdateCoordinator):
@@ -136,6 +157,55 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         _LOGGER.info(
             "POD info refreshed for %s (%d fields)", self.pod, len(new_info)
         )
+
+    async def async_backfill_history(self, from_date: date) -> None:
+        """Wipe POD stats and re-import the full chain from from_date to today.
+
+        Uses month-by-month chunks via the existing api.get_consumption_data.
+        After the wipe, the existing _import_statistics rebuilds the cumulative
+        sum chain chronologically from zero — no special-case logic needed.
+        """
+        _LOGGER.info(
+            "Backfill: starting for %s from %s to today",
+            self.pod, from_date.isoformat(),
+        )
+
+        targets = [
+            f"{DOMAIN}:{self.pod.lower()}_import",
+            f"{DOMAIN}:{self.pod.lower()}_export",
+        ]
+        recorder = get_instance(self.hass)
+        recorder.async_clear_statistics(targets)
+
+        today = date.today()
+        all_records: list[dict[str, Any]] = []
+        for month_start, month_end in _iter_months(from_date, today):
+            try:
+                records = await self.api.get_consumption_data(
+                    self.pod, month_start, month_end
+                )
+            except Exception:
+                _LOGGER.warning(
+                    "Backfill: failed for %s window %s..%s; partial data kept",
+                    self.pod, month_start, month_end, exc_info=True,
+                )
+                break
+            _LOGGER.debug(
+                "Backfill: %s..%s → %d records",
+                month_start, month_end, len(records),
+            )
+            all_records.extend(records)
+
+        if all_records:
+            await self._import_statistics(all_records)
+            _LOGGER.info(
+                "Backfill complete for %s: %d daily records",
+                self.pod, len(all_records),
+            )
+        else:
+            _LOGGER.info(
+                "Backfill: no records found for %s; nothing to import", self.pod
+            )
 
     def _update_device_registry(self, pod_info: dict[str, Any]) -> None:
         """Push meter fields from pod_info onto the device registry row."""
