@@ -120,6 +120,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             )
             return
 
+        # Smart-meter check: PODs with telecitit != "D" don't support
+        # remote-read load curves. Backfill would loop pointlessly,
+        # generating QN04 errors against the portal for every month.
+        if pod_info.get("telecitit") != "D":
+            _LOGGER.info(
+                "Backfill: POD %s is non-smart (telecitit=%r); skipping "
+                "auto-backfill. Load curves are not available for this POD.",
+                pod, pod_info.get("telecitit"),
+            )
+            return
+
         if await _has_existing_stats(hass, pod):
             _LOGGER.debug(
                 "Backfill: POD %s already has stats; skipping auto-backfill",

@@ -423,3 +423,88 @@ from custom_components.retele_electrice.coordinator import _iter_months
 def test_iter_months(start, end, expected):
     """_iter_months handles year-boundary, single-day, empty, and aligned cases."""
     assert list(_iter_months(start, end)) == expected
+
+
+async def test_backfill_history_bails_after_three_consecutive_empty_months(
+    coordinator, mock_hass, fake_api, monkeypatch, caplog
+):
+    """3 consecutive empty months -> loop breaks; subsequent months not fetched."""
+    from datetime import date as _date
+    import logging
+
+    class _FakeDate(_date):
+        @classmethod
+        def today(cls):
+            return _date(2026, 5, 3)
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.date", _FakeDate
+    )
+
+    # 5 months requested; first 3 return empty -> bail before reaching months 4 + 5.
+    fake_api.get_consumption_data = AsyncMock(side_effect=[
+        [],  # Jan 2026 -> empty (1)
+        [],  # Feb 2026 -> empty (2)
+        [],  # Mar 2026 -> empty (3) -> bail here
+        [{"sampleDate": "01/04/2026 00:00", "sampleValues": "0,1", "energyType": "WI"}],  # Apr -> never reached
+        [{"sampleDate": "01/05/2026 00:00", "sampleValues": "0,2", "energyType": "WI"}],  # May -> never reached
+    ])
+
+    fake_recorder = MagicMock()
+    fake_recorder.async_clear_statistics = MagicMock()
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.get_instance",
+        lambda hass: fake_recorder,
+    )
+
+    coordinator._import_statistics = AsyncMock()
+
+    with caplog.at_level(logging.WARNING):
+        await coordinator.async_backfill_history(_date(2026, 1, 1))
+
+    # Only the first 3 monthly fetches happen; 4 + 5 not reached.
+    assert fake_api.get_consumption_data.call_count == 3
+    # Nothing was accumulated -> _import_statistics not called.
+    coordinator._import_statistics.assert_not_called()
+    # Bail-out warning logged.
+    assert "consecutive empty months" in caplog.text
+
+
+async def test_backfill_history_resets_consecutive_counter_on_data(
+    coordinator, mock_hass, fake_api, monkeypatch
+):
+    """A non-empty month between empty months resets the counter -> loop continues."""
+    from datetime import date as _date
+
+    class _FakeDate(_date):
+        @classmethod
+        def today(cls):
+            return _date(2026, 5, 3)
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.date", _FakeDate
+    )
+
+    # empty, empty, DATA, empty, empty -> counter resets at month 3, then climbs back to 2.
+    # Bail threshold (3) never reached -> all 5 months fetched.
+    fake_api.get_consumption_data = AsyncMock(side_effect=[
+        [],  # Jan
+        [],  # Feb
+        [{"sampleDate": "01/03/2026 00:00", "sampleValues": "0,1", "energyType": "WI"}],  # Mar
+        [],  # Apr
+        [],  # May
+    ])
+
+    fake_recorder = MagicMock()
+    fake_recorder.async_clear_statistics = MagicMock()
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.get_instance",
+        lambda hass: fake_recorder,
+    )
+
+    coordinator._import_statistics = AsyncMock()
+
+    await coordinator.async_backfill_history(_date(2026, 1, 1))
+
+    assert fake_api.get_consumption_data.call_count == 5
+    coordinator._import_statistics.assert_called_once()
+    imported = coordinator._import_statistics.call_args.args[0]
+    assert len(imported) == 1
