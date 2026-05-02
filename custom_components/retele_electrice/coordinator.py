@@ -182,6 +182,7 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
 
         today = date.today()
         all_records: list[dict[str, Any]] = []
+        consecutive_empty = 0
         for month_start, month_end in _iter_months(from_date, today):
             try:
                 records = await self.api.get_consumption_data(
@@ -197,7 +198,20 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
                 "Backfill: %s..%s → %d records",
                 month_start, month_end, len(records),
             )
-            all_records.extend(records)
+            if records:
+                consecutive_empty = 0
+                all_records.extend(records)
+            else:
+                consecutive_empty += 1
+                if consecutive_empty >= 3:
+                    _LOGGER.warning(
+                        "Backfill: %d consecutive empty months for %s "
+                        "(last: %s); aborting. Likely a non-smart POD or "
+                        "a date range before data was available. Pass an "
+                        "explicit 'from' date later to force a deeper search.",
+                        consecutive_empty, self.pod, month_start.isoformat(),
+                    )
+                    break
 
         if all_records:
             await self._import_statistics(all_records)
