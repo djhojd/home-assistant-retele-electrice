@@ -14,6 +14,7 @@ from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.retele_electrice.const import CONF_POD, DOMAIN
 from custom_components.retele_electrice.services import (
+    SERVICE_BACKFILL_HISTORY,
     SERVICE_CLEAR_STATISTICS,
     async_register_services,
 )
@@ -27,12 +28,18 @@ def _make_entry(pod: str) -> MagicMock:
 
 
 def _capture_handler(mock_hass: MagicMock):
-    """Run async_register_services(mock_hass) and return the registered handler."""
+    """Run async_register_services(mock_hass) and return the clear_statistics handler."""
+    return _capture_handler_for(mock_hass, SERVICE_CLEAR_STATISTICS)
+
+
+def _capture_handler_for(mock_hass: MagicMock, service_name: str):
+    """Run async_register_services(mock_hass), find handler for service_name."""
     async_register_services(mock_hass)
-    register_call = mock_hass.services.async_register.call_args
-    # Signature: async_register(domain, service, handler, schema=...)
-    assert register_call is not None, "async_register was not called"
-    return register_call.args[2]
+    for register_call in mock_hass.services.async_register.call_args_list:
+        # Signature: async_register(domain, service, handler, schema=...)
+        if register_call.args[1] == service_name:
+            return register_call.args[2]
+    raise AssertionError(f"service {service_name} was not registered")
 
 
 def _make_call(data: dict) -> MagicMock:
@@ -191,3 +198,50 @@ async def test_clear_statistics_without_from_uses_wipe_all_path(mock_hass):
 
     mock_recorder.async_clear_statistics.assert_called_once()
     mock_recorder.queue_task.assert_not_called()
+
+
+async def test_backfill_history_defaults_from_to_install_date(mock_hass):
+    """confirm=True + pod=POD (no from) -> coordinator.async_backfill_history
+    called with from_date = pod_info.meter_data_montare."""
+    from datetime import date
+
+    pod = "RO005E_AAA"
+    entry = _make_entry(pod)
+    entry.data = {
+        CONF_POD: pod,
+        "pod_info": {"meter_data_montare": "2025-10-01"},
+    }
+    entry.entry_id = "test_entry_id"
+    mock_hass.config_entries.async_entries.return_value = [entry]
+
+    fake_coordinator = MagicMock()
+    fake_coordinator.async_backfill_history = AsyncMock()
+    mock_hass.data = {DOMAIN: {entry.entry_id: fake_coordinator}}
+
+    handler = _capture_handler_for(mock_hass, SERVICE_BACKFILL_HISTORY)
+    await handler(_make_call({"confirm": True, "pod": pod}))
+
+    fake_coordinator.async_backfill_history.assert_called_once_with(date(2025, 10, 1))
+
+
+async def test_backfill_history_explicit_from_overrides_install_date(mock_hass):
+    """from arg explicitly provided -> that date wins, install_date ignored."""
+    from datetime import date
+
+    pod = "RO005E_AAA"
+    entry = _make_entry(pod)
+    entry.data = {
+        CONF_POD: pod,
+        "pod_info": {"meter_data_montare": "2025-10-01"},  # ignored
+    }
+    entry.entry_id = "test_entry_id"
+    mock_hass.config_entries.async_entries.return_value = [entry]
+
+    fake_coordinator = MagicMock()
+    fake_coordinator.async_backfill_history = AsyncMock()
+    mock_hass.data = {DOMAIN: {entry.entry_id: fake_coordinator}}
+
+    handler = _capture_handler_for(mock_hass, SERVICE_BACKFILL_HISTORY)
+    await handler(_make_call({"confirm": True, "pod": pod, "from": date(2026, 1, 1)}))
+
+    fake_coordinator.async_backfill_history.assert_called_once_with(date(2026, 1, 1))

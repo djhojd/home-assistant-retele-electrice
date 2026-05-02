@@ -31,3 +31,37 @@ clear_statistics:
       example: "2026-04-29"
       selector:
         date:
+
+backfill_history:
+  name: Backfill history
+  description: >-
+    Permanently delete the POD's statistics and re-import the full chain
+    from the meter install date (or a user-specified start date) to today.
+    Uses the portal's per-month query and rebuilds the cumulative sum
+    chain from zero. Useful on first install (when you want full history)
+    or to recover from significant data corruption.
+  fields:
+    confirm:
+      name: Confirm
+      description: Must be set to true. Prevents accidental calls.
+      required: true
+      example: true
+      selector:
+        boolean:
+    pod:
+      name: POD
+      description: >-
+        Limit the backfill to a single POD ID. Defaults to all configured PODs.
+      required: false
+      example: RO005E513888412
+      selector:
+        text:
+    from:
+      name: From date
+      description: >-
+        Earliest date to backfill from. If omitted, uses the meter install
+        date from pod_info (`meter_data_montare`). Format: YYYY-MM-DD.
+      required: false
+      example: "2025-10-01"
+      selector:
+        date:
