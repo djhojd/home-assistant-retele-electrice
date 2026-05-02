@@ -10,6 +10,7 @@ Custom component for [Home Assistant](https://www.home-assistant.io/) that impor
 - Provides a **"Last Sync" sensor** showing when data was last fetched
 - Provides a **"Sync Data" button** to trigger a manual refresh
 - Fetches **per-POD metadata** (customer, address, contracted kW, supplier, meter brand/serial/install date, etc.) on first install and exposes it as a diagnostic sensor + a manual "Refresh POD Info" button
+- On first install: imports the **full meter history** from the install date forward, so charts have data going back as far as the meter has been recording.
 
 ## Requirements
 
@@ -97,6 +98,22 @@ data:
 The service refuses to run unless `confirm: true` is passed, and rejects unknown PODs.
 
 If `from:` is provided, only rows where the timestamp is at or after midnight Bucharest local time of that date are deleted. Older rows survive. Useful for recovering a specific gap without losing months of history. The cumulative `sum` chain is rebuilt from the cutoff onward by the next sync.
+
+### `retele_electrice.backfill_history`
+
+Wipes the POD's statistics and re-imports the full chain from a starting date (defaults to the meter install date from POD info) to today. Useful on existing installs where you want to backfill data older than the integration's normal sync window.
+
+```yaml
+service: retele_electrice.backfill_history
+data:
+  confirm: true              # required, must literally be true
+  pod: RO005E513888412       # optional; defaults to all configured PODs
+  from: 2025-10-01           # optional; defaults to pod_info.meter_data_montare
+```
+
+Triggered automatically on first install if (a) no statistics exist for the POD, and (b) `pod_info` has the meter install date. Otherwise must be invoked manually.
+
+The service is synchronous and takes about 10 seconds for ~7 months of history (one portal request per month).
 
 ## Troubleshooting
 

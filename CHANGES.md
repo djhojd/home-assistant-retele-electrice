@@ -1,5 +1,63 @@
 # Rețele Electrice — Change Log
 
+## Session: 2026-05-03 — Historical backfill
+
+### New: full-history import on first install + on-demand service
+
+The integration now imports the **full meter-history** of a POD on first install (from `meter_data_montare` to today, ~7 months for the prosumer POD). Existing installs can re-trigger via a new service.
+
+### New service: `retele_electrice.backfill_history`
+
+```yaml
+service: retele_electrice.backfill_history
+data:
+  confirm: true                 # required
+  pod: RO005E513888412          # optional; defaults to all configured PODs
+  from: 2025-10-01              # optional; defaults to pod_info.meter_data_montare
+```
+
+Wipes the POD's stats and re-imports the full chain from `from` (or install date) to today, looping monthly via `api.get_consumption_data`. Cumulative `sum` rebuilds chronologically from zero. ~10 seconds for 7 months.
+
+### Auto-trigger on first install
+
+After `async_setup_entry` schedules the existing `pod_info` fetch, a second non-blocking task waits for the `pod_info_updated_<entry_id>` dispatcher signal (or reads `entry.data` directly if already populated), then checks two conditions:
+
+1. The POD has no existing stats (genuinely new install, not a re-add)
+2. `pod_info.meter_data_montare` is populated
+
+Both hold → backfill runs automatically. Either fails → skip. User can run the service manually later.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `coordinator.py` | New `async_backfill_history()` method + `_iter_months()` helper. Reuses `_import_statistics` after a wipe so the cumulative-sum chain rebuilds chronologically from zero. |
+| `services.py` | New `backfill_history` service handler. Same `confirm/pod/from` shape as `clear_statistics`. Pulls install date from `pod_info` when `from` is omitted. Refactored `async_register_services` to register both services independently. |
+| `services.yaml` | Documents the new service. |
+| `__init__.py` | New auto-trigger task in `async_setup_entry`, gated on no-existing-stats + pod_info-has-install-date. Plus a `_has_existing_stats()` helper. |
+| `tests/test_coordinator.py` | +6 tests (2 for `async_backfill_history`, 4 parametrized for `_iter_months` edge cases). |
+| `tests/test_services.py` | +2 tests for the new service (install-date defaulting + explicit-from override). |
+
+### Recovery for the prosumer POD
+
+After deploying:
+
+```yaml
+service: retele_electrice.backfill_history
+data:
+  confirm: true
+  pod: RO005E513888412
+```
+
+Wipes the existing April 26 → May 1 chain and re-imports the full October 2025 → today range.
+
+### Verified post-recovery
+
+- `ha_get_history source=statistics period=day entity_ids=retele_electrice:ro005e513888412_import start_time=2025-09-01` → daily rows starting 2025-10-01 forward.
+- Cumulative `sum` strictly monotonic across the full 7-month chain.
+
+---
+
 ## Session: 2026-05-02 — Late-arriving data fix
 
 ### Bug
