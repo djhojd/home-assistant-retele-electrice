@@ -43,6 +43,10 @@ Custom component for [Home Assistant](https://www.home-assistant.io/) that impor
    - **POD** - your Point of Delivery ID (e.g. `RO005E513888412`)
    - **Update interval** - how often to fetch data, in minutes (default: 720 = 12 hours)
 
+### Recommended dashboards
+
+Once the integration is set up, see [`DASHBOARDS.md`](DASHBOARDS.md) for ready-to-paste Lovelace YAML. Two variants per POD type (prosumer / non-prosumer): a recommended **Starter** and an optional **Explorer**. All snippets use only Home Assistant's built-in cards — no HACS dependencies.
+
 ## How it works
 
 The integration scrapes data from the Retele Electrice Salesforce-based portal:

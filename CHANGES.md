@@ -1,5 +1,50 @@
 # Rețele Electrice — Change Log
 
+## Session: 2026-05-03 — Dashboard onboarding docs
+
+### New: `DASHBOARDS.md` at repo root
+
+Ready-to-paste Lovelace YAML for new users — no more "I have sensors but no dashboard" friction. Pure documentation, no integration code changes.
+
+Four snippets, all using only HA built-in cards (`tile`, `statistic`, `statistics-graph`, `heading`, `grid`):
+
+| Snippet | Cards | Audience |
+|---|---|---|
+| Prosumer Starter ("Energie") | 8 | Recommended default — last sync, manual sync, this-month import/export, 30-day daily bars |
+| Prosumer Explorer | 14 | Period totals (this/last month, this/last year × import/export) + 4 multi-range charts |
+| Non-prosumer Starter ("Energie") | 6 | Same shape, export-related cards removed |
+| Non-prosumer Explorer | 10 | Same two-section layout, import-only |
+
+Source-of-truth: the live Energie + Native views from the user's running HA instance, captured verbatim via the `mcp__home-assistant__ha_config_get_dashboard` tool.
+
+### POD-type self-detection
+
+`DASHBOARDS.md` opens with a 2-line check using the existing `pod_info` diagnostic sensor: `kw_evacuata` attribute populated → prosumer; null → non-prosumer. No new entities, no new attributes — leverages what the POD info feature already exposes.
+
+### Conventions
+
+- **Placeholder POD:** literal `RO005E513888412` (uppercase, in titles) + `ro005e513888412` (lowercase, in entity IDs). Find/replace handles user substitution.
+- **Romanian labels** matching the existing user's dashboard (`Sincronizare manuala`, `Import luna curenta`, etc.). No diacritics — for editor portability.
+- **No HACS-dependent cards** in published snippets. The HACS-heavy Explorer variant with period selectors built earlier this session is deliberately not published — experimental, adds dependencies.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `DASHBOARDS.md` | New file at repo root. ~450 lines: 4 YAML snippets + intro / install / customization sections. |
+| `README.md` | New "Recommended dashboards" pointer in Configuration section linking to `DASHBOARDS.md`. |
+
+### Maintenance triggers
+
+`DASHBOARDS.md` needs updating when:
+- An entity ID changes in the integration (e.g., `last_sync` entity renamed)
+- A new entity belongs in the starter dashboard (e.g., a future cost sensor)
+- HA breaks the `statistic` or `statistics-graph` schema (rare)
+
+The `<!-- updated: YYYY-MM-DD -->` marker at the top of the file is the audit trail.
+
+---
+
 ## Session: 2026-05-03 — Historical backfill
 
 ### New: full-history import on first install + on-demand service
