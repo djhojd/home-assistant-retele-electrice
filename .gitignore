@@ -4,6 +4,9 @@ __pycache__/
 *.pyc
 .venv/
 
+# Browser-automation working directory (created by the playwright-cli skill).
+.playwright-cli/
+
 # Local dev (test scripts, captured fixtures, demo CSVs, credentials).
 # Everything in dev/ is for local testing only and never committed.
 dev/
