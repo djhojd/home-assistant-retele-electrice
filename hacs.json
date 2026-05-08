@@ -1,5 +1,6 @@
 {
   "name": "Rețele Electrice",
   "homeassistant": "2024.4.0",
+  "hacs": "2.0.5",
   "hide_default_branch": true
 }
