@@ -1,0 +1,6 @@
+{
+  "name": "Retele Electrice",
+  "homeassistant": "2026.1.0",
+  "hacs": "2.0.5",
+  "hide_default_branch": true
+}

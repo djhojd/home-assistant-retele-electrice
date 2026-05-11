@@ -1,0 +1,25 @@
+.env
+.claude/
+__pycache__/
+*.pyc
+.venv/
+
+# Tooling caches and reports
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+*.egg-info/
+.vscode/
+
+# Browser-automation working directory (created by the playwright-cli skill).
+.playwright-cli/
+
+# Local dev (test scripts, captured fixtures, demo CSVs, credentials,
+# personal change log, working notes, plans, investigations).
+# Everything in dev/ is for local use only and never committed.
+dev/
+
+# Agent / Claude Code guides — local convention, not for the public repo.
+AGENTS.md
+CLAUDE.md
