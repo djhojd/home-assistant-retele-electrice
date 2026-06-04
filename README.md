@@ -114,7 +114,7 @@ Plus up to 20 **per-field diagnostic sensors** broken out from POD info — only
 |---|---|
 | Contract | `_customer`, `_consumption_address`, `_supplier`, `_previous_supplier`, `_contracted_power` (kW), `_export_power` (kW, prosumers only), `_active_flag`, `_supplier_active_since`, `_consumer_active_since` |
 | Regulatory | `_atr_number`, `_atr_date`, `_consumer_registry_version`, `_consumer_registry_date` |
-| Technical | `_smart_metered`, `_delimitation_point`, `_delimitation_voltage`, `_meter_type_code`, `_meter_install_type`, `_meter_constant`, `_meter_precision_class` |
+| Technical | `_smart_metered`, `_delimitation_point`, `_delimitation_voltage`, `_meter_type_code`, `_meter_install_type`, `_meter_install_date`, `_meter_constant`, `_meter_precision_class` |
 
 Long string values are truncated to 50 chars in the sensor state with an ellipsis; the untruncated value is exposed via the `full_value` attribute (use `state_attr('sensor.…_delimitation_point', 'full_value')` in templates).
 

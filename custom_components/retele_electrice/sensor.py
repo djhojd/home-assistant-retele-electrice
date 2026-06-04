@@ -83,6 +83,9 @@ _POD_FIELD_DESCRIPTORS: tuple[_PodFieldDescriptor, ...] = (
                         icon="mdi:function-variant"),
     _PodFieldDescriptor("meter_precizie", "Meter precision class",
                         "meter_precision_class", icon="mdi:bullseye-arrow"),
+    _PodFieldDescriptor("meter_data_montare", "Meter install date",
+                        "meter_install_date",
+                        device_class=SensorDeviceClass.DATE),
 )
 
 
@@ -173,7 +176,6 @@ class PodInfoSensor(SensorEntity):
     _DEVICE_INFO_KEYS = frozenset({
         "meter_marca",
         "meter_seria",
-        "meter_data_montare",
     })
 
     def __init__(self, hass, entry, pod):

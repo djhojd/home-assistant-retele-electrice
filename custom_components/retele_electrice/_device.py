@@ -16,9 +16,10 @@ def build_device_info(pod: str, entry_data: dict[str, Any]) -> DeviceInfo:
     """Compose DeviceInfo for `pod` from the persisted entry data.
 
     Standard DeviceInfo slots come from the meter section of pod_info; the
-    rest of pod_info ends up on the diagnostic POD info sensor as attributes.
-    Falls back to minimal static values if pod_info is absent (e.g. before
-    the first refresh has succeeded).
+    rest of pod_info ends up on the diagnostic POD info sensor as attributes
+    and (for promoted fields) as their own diagnostic sensors. Falls back to
+    minimal static values if pod_info is absent (e.g. before the first
+    refresh has succeeded).
     """
     pod_info: dict[str, Any] = entry_data.get("pod_info") or {}
 
@@ -34,7 +35,5 @@ def build_device_info(pod: str, entry_data: dict[str, Any]) -> DeviceInfo:
 
     if serial := pod_info.get("meter_seria"):
         info["serial_number"] = serial
-    if install_date := pod_info.get("meter_data_montare"):
-        info["hw_version"] = install_date
 
     return info

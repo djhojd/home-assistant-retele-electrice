@@ -264,9 +264,9 @@ async def test_refresh_pod_info_updates_device_registry(
 
     fake_registry.async_update_device.assert_called_once_with(
         "fake_device_id",
+        hw_version=None,
         model="EXAMPLE-METER : 5/60A, 230 V",
         serial_number="000000000000000",
-        hw_version="2020-01-01",
     )
 
 

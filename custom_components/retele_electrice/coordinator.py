@@ -234,20 +234,22 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             )
             return
 
-        updates: dict[str, str] = {}
+        # hw_version=None is unconditional: pre-v0.1.2 versions stored the
+        # meter install date here, which HA renders as "Hardware: <date>" —
+        # a semantic mismatch (install date is not a hardware revision).
+        # The install date is now exposed as its own diagnostic sensor.
+        # Clearing on every refresh removes the stale value from older installs.
+        updates: dict[str, Any] = {"hw_version": None}
         if model := pod_info.get("meter_marca"):
             updates["model"] = model
         if serial := pod_info.get("meter_seria"):
             updates["serial_number"] = serial
-        if hw := pod_info.get("meter_data_montare"):
-            updates["hw_version"] = hw
 
-        if updates:
-            device_reg.async_update_device(device.id, **updates)
-            _LOGGER.debug(
-                "Device registry updated for %s: %s",
-                self.pod, sorted(updates.keys()),
-            )
+        device_reg.async_update_device(device.id, **updates)
+        _LOGGER.debug(
+            "Device registry updated for %s: %s",
+            self.pod, sorted(updates.keys()),
+        )
 
     # ------------------------------------------------------------------
     # Statistics injection

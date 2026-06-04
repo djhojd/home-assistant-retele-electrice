@@ -192,7 +192,26 @@ def test_kw_descriptors_have_power_device_class():
 
 
 def test_date_descriptors_have_date_device_class():
-    """Sanity: *_date fields should be rendered as DATE."""
-    for key in ("atr_date", "cer_date", "activ_furnizor_la", "activ_consumator_la"):
+    """Sanity: date-bearing fields should be rendered as DATE."""
+    for key in (
+        "atr_date",
+        "cer_date",
+        "activ_furnizor_la",
+        "activ_consumator_la",
+        "meter_data_montare",
+    ):
         d = _descriptor(key)
         assert d.device_class is SensorDeviceClass.DATE
+
+
+def test_meter_install_date_sensor_parses_date():
+    """meter_data_montare should be promoted to a DATE-typed sensor.
+
+    Prior to v0.1.2 this value was crammed into DeviceInfo's hw_version slot,
+    which HA renders as "Hardware: <date>" — a semantic mismatch. It's now
+    its own diagnostic sensor with proper DATE device_class.
+    """
+    entry = _entry_with({"meter_data_montare": "2025-10-01"})
+    sensor = PodFieldSensor(entry, POD, _descriptor("meter_data_montare"))
+    assert sensor.native_value == date(2025, 10, 1)
+    assert sensor._attr_unique_id == f"retele_electrice_{POD}_meter_install_date"
