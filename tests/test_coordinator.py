@@ -270,6 +270,34 @@ async def test_refresh_pod_info_updates_device_registry(
     )
 
 
+async def test_update_device_registry_clears_hw_version_with_empty_pod_info(
+    coordinator, mock_hass, monkeypatch
+):
+    """Setup-time auto-clear: with empty pod_info, async_update_device is still
+    called with hw_version=None so older installs that had it set get cleared.
+
+    Regression guard for the v0.1.2 -> v0.1.3 upgrade where the setup-time
+    call in async_setup_entry needs to clear stale hw_version even before
+    pod_info has been fetched.
+    """
+    fake_device = MagicMock()
+    fake_device.id = "fake_device_id"
+    fake_registry = MagicMock()
+    fake_registry.async_get_device = MagicMock(return_value=fake_device)
+    fake_registry.async_update_device = MagicMock()
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.dr.async_get",
+        lambda hass: fake_registry,
+    )
+
+    coordinator._update_device_registry({})
+
+    fake_registry.async_update_device.assert_called_once_with(
+        "fake_device_id",
+        hw_version=None,
+    )
+
+
 async def test_refresh_pod_info_skips_device_update_when_device_missing(
     coordinator, mock_hass, fake_api, monkeypatch
 ):
@@ -508,3 +536,152 @@ async def test_backfill_history_resets_consecutive_counter_on_data(
     coordinator._import_statistics.assert_called_once()
     imported = coordinator._import_statistics.call_args.args[0]
     assert len(imported) == 1
+
+
+# ---------------------------------------------------------------------------
+# Monthly POD-info auto-refresh
+# ---------------------------------------------------------------------------
+
+
+def _coordinator_with_anchor(coordinator, anchor: str | None):
+    """Wire a fake config_entry on `coordinator` whose data carries (or omits)
+    pod_info_refreshed_at = `anchor`. Returns the entry for further mutation.
+    """
+    fake_entry = MagicMock()
+    fake_entry.data = {"pod": coordinator.pod}
+    if anchor is not None:
+        fake_entry.data["pod_info_refreshed_at"] = anchor
+    fake_entry.entry_id = "test_entry_id"
+    coordinator.config_entry = fake_entry
+    return fake_entry
+
+
+def _patch_now_bucharest(monkeypatch, fixed: datetime):
+    """Make coordinator.datetime.now(tz=...) return `fixed` in that tz.
+
+    `fixed` must already carry tzinfo; we use it as the authoritative moment.
+    """
+    from datetime import datetime as _real_datetime
+
+    class _FakeDatetime(_real_datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz is None:
+                return fixed.replace(tzinfo=None)
+            return fixed.astimezone(tz)
+
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.datetime", _FakeDatetime
+    )
+
+
+def test_should_refresh_pod_info_monthly_fires_when_anchor_missing(coordinator):
+    """No pod_info_refreshed_at -> treat as 'never refreshed' -> fire."""
+    _coordinator_with_anchor(coordinator, anchor=None)
+    assert coordinator._should_refresh_pod_info_monthly() is True
+
+
+def test_should_refresh_pod_info_monthly_fires_when_anchor_malformed(coordinator):
+    """Garbage string -> treat as missing -> fire."""
+    _coordinator_with_anchor(coordinator, anchor="not-an-iso-timestamp")
+    assert coordinator._should_refresh_pod_info_monthly() is True
+
+
+def test_should_refresh_pod_info_monthly_skips_within_same_month(
+    coordinator, monkeypatch
+):
+    """Anchor in same Bucharest calendar month as now -> skip."""
+    from custom_components.retele_electrice.coordinator import TZ_BUCHAREST
+
+    now = datetime(2026, 6, 20, 10, 0, tzinfo=TZ_BUCHAREST)
+    _patch_now_bucharest(monkeypatch, now)
+    _coordinator_with_anchor(coordinator, anchor="2026-06-04T15:00:00+00:00")
+    assert coordinator._should_refresh_pod_info_monthly() is False
+
+
+def test_should_refresh_pod_info_monthly_fires_when_last_in_previous_month(
+    coordinator, monkeypatch
+):
+    """Anchor in previous Bucharest calendar month -> fire."""
+    from custom_components.retele_electrice.coordinator import TZ_BUCHAREST
+
+    now = datetime(2026, 6, 1, 10, 0, tzinfo=TZ_BUCHAREST)
+    _patch_now_bucharest(monkeypatch, now)
+    _coordinator_with_anchor(coordinator, anchor="2026-05-15T12:00:00+00:00")
+    assert coordinator._should_refresh_pod_info_monthly() is True
+
+
+def test_should_refresh_pod_info_monthly_handles_tz_edge(
+    coordinator, monkeypatch
+):
+    """An anchor whose UTC instant falls in May but whose Bucharest local
+    time falls in June stays 'same month' relative to a June Bucharest now.
+
+    Specifically: 2026-05-31 22:00 UTC == 2026-06-01 01:00 Bucharest (summer
+    time, UTC+3). So if 'now' is 2026-06-04 Bucharest, both anchor and now
+    are in June Bucharest -> skip.
+    """
+    from custom_components.retele_electrice.coordinator import TZ_BUCHAREST
+
+    now = datetime(2026, 6, 4, 10, 0, tzinfo=TZ_BUCHAREST)
+    _patch_now_bucharest(monkeypatch, now)
+    _coordinator_with_anchor(coordinator, anchor="2026-05-31T22:00:00+00:00")
+    assert coordinator._should_refresh_pod_info_monthly() is False
+
+
+async def test_async_update_data_triggers_monthly_refresh_when_due(
+    coordinator, mock_hass, fake_api, monkeypatch
+):
+    """When _should_refresh_pod_info_monthly returns True, the coordinator's
+    regular tick fires async_refresh_pod_info after the consumption fetch."""
+    fake_api.get_consumption_data = AsyncMock(return_value=[])
+    coordinator._import_statistics = AsyncMock()
+    coordinator._should_refresh_pod_info_monthly = MagicMock(return_value=True)
+    coordinator.async_refresh_pod_info = AsyncMock()
+
+    result = await coordinator._async_update_data()
+
+    coordinator.async_refresh_pod_info.assert_awaited_once()
+    assert result["records_count"] == 0
+    assert result["pod"] == coordinator.pod
+
+
+async def test_async_update_data_skips_monthly_refresh_when_not_due(
+    coordinator, mock_hass, fake_api, monkeypatch
+):
+    """When _should_refresh_pod_info_monthly returns False, no extra
+    pod_info call is made."""
+    fake_api.get_consumption_data = AsyncMock(return_value=[])
+    coordinator._import_statistics = AsyncMock()
+    coordinator._should_refresh_pod_info_monthly = MagicMock(return_value=False)
+    coordinator.async_refresh_pod_info = AsyncMock()
+
+    await coordinator._async_update_data()
+
+    coordinator.async_refresh_pod_info.assert_not_called()
+
+
+async def test_async_update_data_monthly_refresh_failure_does_not_break_result(
+    coordinator, mock_hass, fake_api, monkeypatch, caplog
+):
+    """A failed monthly POD-info refresh must NOT cause the data poll to fail.
+
+    The consumption-data result is the contract of _async_update_data; any
+    pod_info-side failure should be swallowed with a WARNING log.
+    """
+    import logging
+
+    fake_api.get_consumption_data = AsyncMock(return_value=[])
+    coordinator._import_statistics = AsyncMock()
+    coordinator._should_refresh_pod_info_monthly = MagicMock(return_value=True)
+    coordinator.async_refresh_pod_info = AsyncMock(
+        side_effect=RuntimeError("portal hiccup on pod_info")
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = await coordinator._async_update_data()
+
+    # The data poll still succeeded.
+    assert result["pod"] == coordinator.pod
+    # Failure was logged, not raised.
+    assert "Monthly POD info refresh" in caplog.text

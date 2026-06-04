@@ -96,16 +96,56 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             else:
                 _LOGGER.warning("No consumption records returned for POD %s", self.pod)
 
-            return {
+            result = {
                 "last_update": datetime.now(tz=timezone.utc),
                 "records_count": len(records),
                 "pod": self.pod,
             }
 
+            # Calendar-monthly POD-info auto-refresh. Fires on the first
+            # coordinator tick of each Bucharest calendar month, or whenever
+            # the anchor is missing/malformed. Failures are logged but never
+            # affect the consumption-data result (the contract of this method).
+            if self._should_refresh_pod_info_monthly():
+                try:
+                    await self.async_refresh_pod_info()
+                except Exception:
+                    _LOGGER.warning(
+                        "Monthly POD info refresh for %s failed; will retry "
+                        "next cycle", self.pod, exc_info=True,
+                    )
+
+            return result
+
         except ReteleElectriceAuthError as err:
             raise UpdateFailed(f"Authentication failed: {err}") from err
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
+
+    def _should_refresh_pod_info_monthly(self) -> bool:
+        """Return True if pod_info_refreshed_at is missing, malformed, or in
+        a previous Bucharest calendar month relative to now.
+
+        Bucharest is the right reference because the portal publishes data in
+        Bucharest local time and the user lives in Bucharest. UTC would fire
+        on the 1st UTC, which is still the previous day in Romania during
+        summer time (UTC+3).
+        """
+        entry = getattr(self, "config_entry", None)
+        if entry is None:
+            return False
+        ts_str = entry.data.get("pod_info_refreshed_at")
+        if not ts_str:
+            return True
+        try:
+            ts_utc = datetime.fromisoformat(ts_str)
+        except ValueError:
+            return True
+        last_bucharest = ts_utc.astimezone(TZ_BUCHAREST)
+        now_bucharest = datetime.now(tz=TZ_BUCHAREST)
+        return (last_bucharest.year, last_bucharest.month) != (
+            now_bucharest.year, now_bucharest.month,
+        )
 
     async def async_refresh_pod_info(self) -> None:
         """Fetch POD info, persist to the config entry, dispatch a signal.
