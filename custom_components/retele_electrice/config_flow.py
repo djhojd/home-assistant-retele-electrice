@@ -22,6 +22,7 @@ from .const import (
     DOMAIN,
     MAX_UPDATE_INTERVAL_HOURS,
     MIN_UPDATE_INTERVAL_HOURS,
+    current_update_interval_hours,
 )
 from .api import ReteleElectriceApi, ReteleElectriceAuthError
 
@@ -132,12 +133,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current = self.config_entry.options.get(
-            CONF_UPDATE_INTERVAL_HOURS,
-            self.config_entry.data.get(
-                CONF_UPDATE_INTERVAL_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS
-            ),
-        )
+        current = current_update_interval_hours(self.config_entry)
 
         schema = vol.Schema(
             {

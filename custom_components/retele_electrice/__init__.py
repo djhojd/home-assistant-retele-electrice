@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_UPDATE_INTERVAL_HOURS,
     MAX_UPDATE_INTERVAL_HOURS,
     MIN_UPDATE_INTERVAL_HOURS,
+    current_update_interval_hours,
 )
 from .api import ReteleElectriceApi
 from .coordinator import ReteleElectriceCoordinator
@@ -69,10 +70,7 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """React to options-flow saves: update coordinator's interval in place."""
-    hours = entry.options.get(
-        CONF_UPDATE_INTERVAL_HOURS,
-        entry.data.get(CONF_UPDATE_INTERVAL_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS),
-    )
+    hours = current_update_interval_hours(entry)
     coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
     if coordinator is None:
         # Setup hasn't populated hass.data yet; the new interval will be
@@ -91,10 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     email = entry.data[CONF_EMAIL]
     password = entry.data[CONF_PASSWORD]
     pod = entry.data[CONF_POD]
-    update_interval_hours = entry.options.get(
-        CONF_UPDATE_INTERVAL_HOURS,
-        entry.data.get(CONF_UPDATE_INTERVAL_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS),
-    )
+    update_interval_hours = current_update_interval_hours(entry)
 
     api = ReteleElectriceApi(email, password)
 
