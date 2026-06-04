@@ -88,13 +88,29 @@ async def test_migrate_v1_clamps_to_bounds():
     )
 
 
+async def test_migrate_v2_is_noop():
+    """v2 entries skip migration entirely and return True without touching the entry."""
+    hass = MagicMock()
+    hass.config_entries.async_update_entry = MagicMock()
+    entry = MagicMock()
+    entry.version = 2
+    entry.data = {CONF_UPDATE_INTERVAL_HOURS: 12}
+
+    result = await async_migrate_entry(hass, entry)
+
+    assert result is True
+    hass.config_entries.async_update_entry.assert_not_called()
+
+
 async def test_options_update_listener_mutates_coordinator_interval():
     """When options change, the listener updates coordinator.update_interval."""
     from custom_components.retele_electrice import async_update_options
 
+    sentinel_data = {"records_count": 3, "pod": "RO005EXXXXXXXXX"}
     hass = MagicMock()
     coordinator = MagicMock()
     coordinator.update_interval = timedelta(hours=24)
+    coordinator.data = sentinel_data
     hass.data = {DOMAIN: {"test_entry_id": coordinator}}
 
     entry = MagicMock()
@@ -106,7 +122,10 @@ async def test_options_update_listener_mutates_coordinator_interval():
 
     assert coordinator.update_interval == timedelta(hours=6)
     # Ensure the pending refresh timer is re-armed using the new interval.
-    coordinator.async_set_updated_data.assert_called_once_with(coordinator.data)
+    # Using a sentinel value (not a MagicMock self-equality) ensures the
+    # assertion catches code that calls async_set_updated_data with the
+    # wrong argument.
+    coordinator.async_set_updated_data.assert_called_once_with(sentinel_data)
 
 
 async def test_options_update_listener_falls_back_to_default():

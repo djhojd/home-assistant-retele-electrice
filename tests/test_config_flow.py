@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from custom_components.retele_electrice.config_flow import OptionsFlowHandler
 from custom_components.retele_electrice.const import (
     CONF_UPDATE_INTERVAL_HOURS,
