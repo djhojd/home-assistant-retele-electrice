@@ -14,6 +14,9 @@ Custom component for [Home Assistant](https://www.home-assistant.io/) that impor
 >
 > Help wanted: if you have a different POD on Retele Electrice (non-prosumer, different meter, etc.), please install it and report any problems by [opening an issue](https://github.com/djhojd/home-assistant-retele-electrice/issues/new).
 
+> [!NOTE]
+> **Data freshness.** The Retele Electrice portal publishes metering data with a delay of a few days (typically 2-3). The integration sees data as soon as the portal does — there's no way to fetch live readings. Today's bar in the Energy Dashboard will stay empty until the portal catches up.
+
 ## Features
 
 - **Hourly electricity consumption and production in Home Assistant** — kWh import + export, refreshed automatically every 24 hours (configurable)
@@ -89,7 +92,7 @@ The integration imports data as **external statistics** with the metadata Home A
 
 What you don't get yet:
 - **Cost tracking** - The integration doesn't fetch tariffs. Set a fixed `RON / kWh` price in the Energy config's "Use a static price" option if you want cost.
-- **Live data** - The portal publishes with a 1-2 day delay, so today's bar stays empty until the portal catches up.
+- **Live data** - The portal publishes with a few days' delay, so today's bar stays empty until the portal catches up.
 - **Solar production** - Add your inverter's integration as **Solar production** independently.
 
 ### Recommended dashboards
