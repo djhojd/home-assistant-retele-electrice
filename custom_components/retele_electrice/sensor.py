@@ -165,7 +165,7 @@ class PodInfoSensor(SensorEntity):
     """Diagnostic sensor carrying the POD's static metadata as attributes."""
 
     _attr_has_entity_name = True
-    _attr_name = "POD info last sync"
+    _attr_name = "POD Info Last Sync"
     _attr_icon = "mdi:information-outline"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_should_poll = False
