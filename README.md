@@ -104,9 +104,21 @@ For richer per-POD dashboards (last sync, manual sync button, period totals, mul
 | Entity | Type | Description |
 |---|---|---|
 | `sensor.retele_electrice_<pod>_last_sync` | Sensor (timestamp) | Last successful data sync time |
-| `sensor.retele_electrice_<pod>_pod_info` | Sensor (diagnostic, timestamp) | POD metadata; state = last refresh time, attributes carry the contract and meter details |
+| `sensor.retele_electrice_<pod>_pod_info` | Sensor (diagnostic, timestamp) | POD metadata; state = last refresh time, attributes carry the full contract and meter detail dump |
 | `button.retele_electrice_<pod>_sync_button` | Button | Triggers a manual data refresh |
 | `button.retele_electrice_<pod>_refresh_pod_info` | Button (diagnostic) | Manually re-fetch POD info from the portal |
+
+Plus up to 20 **per-field diagnostic sensors** broken out from POD info — only the ones with data on your POD are registered. New fields get their own sensor on the next POD-info refresh.
+
+| Field group | Sensor suffixes |
+|---|---|
+| Contract | `_customer`, `_consumption_address`, `_supplier`, `_previous_supplier`, `_contracted_power` (kW), `_export_power` (kW, prosumers only), `_active_flag`, `_supplier_active_since`, `_consumer_active_since` |
+| Regulatory | `_atr_number`, `_atr_date`, `_cer_version`, `_cer_date` |
+| Technical | `_smart_metered`, `_delimitation_point`, `_delimitation_voltage`, `_meter_type_code`, `_meter_install_type`, `_meter_constant`, `_meter_precision_class` |
+
+Long string values are truncated to 50 chars in the sensor state with an ellipsis; the untruncated value is exposed via the `full_value` attribute (use `state_attr('sensor.…_delimitation_point', 'full_value')` in templates).
+
+Sensitive fields (CUI / billing address / cadastral) deliberately stay attribute-only on the `pod_info` sensor and are **not** promoted to standalone entities.
 
 ## Services
 
