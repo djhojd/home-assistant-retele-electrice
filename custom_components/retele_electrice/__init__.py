@@ -106,6 +106,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # v0.1.2 moved meter install date out of DeviceInfo.hw_version into its
+    # own diagnostic sensor. Installs that upgraded from v0.1.0/v0.1.1 still
+    # have a stale hw_version baked into the device registry. Calling the
+    # registry helper here fires the unconditional hw_version=None set inside
+    # it (no-op for fresh installs; clears the stale value on upgrades).
+    coordinator._update_device_registry(entry.data.get("pod_info") or {})
+
     # First-install hook: fetch POD info if we don't have it yet. Non-blocking —
     # integration setup completes immediately even if the fetch is slow or fails.
     if "pod_info" not in entry.data:
