@@ -28,15 +28,16 @@ from .api import ReteleElectriceApi, ReteleElectriceAuthError
 
 _LOGGER = logging.getLogger(__name__)
 
-STEP_USER_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_EMAIL): str,
-        vol.Required(CONF_PASSWORD): str,
-        vol.Required(CONF_POD): str,
-        vol.Required(
-            CONF_UPDATE_INTERVAL_HOURS,
-            default=DEFAULT_UPDATE_INTERVAL_HOURS,
-        ): NumberSelector(
+
+def _update_interval_field():
+    """Return the schema value for the polling-interval field.
+
+    Shared by STEP_USER_DATA_SCHEMA (install-time) and OptionsFlowHandler
+    (post-install). `vol.Coerce(int)` keeps the on-disk type stable —
+    NumberSelector returns float by default; we want int in entry.data.
+    """
+    return vol.All(
+        NumberSelector(
             NumberSelectorConfig(
                 min=MIN_UPDATE_INTERVAL_HOURS,
                 max=MAX_UPDATE_INTERVAL_HOURS,
@@ -45,6 +46,19 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
                 mode=NumberSelectorMode.BOX,
             )
         ),
+        vol.Coerce(int),
+    )
+
+
+STEP_USER_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_EMAIL): str,
+        vol.Required(CONF_PASSWORD): str,
+        vol.Required(CONF_POD): str,
+        vol.Required(
+            CONF_UPDATE_INTERVAL_HOURS,
+            default=DEFAULT_UPDATE_INTERVAL_HOURS,
+        ): _update_interval_field(),
     }
 )
 
@@ -113,11 +127,13 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
         """Store the config entry for later reads.
 
-        Newer Home Assistant exposes `config_entry` as a read-only property
-        wired via the flow's handler id once the flow has been added to a
-        running HA instance. We keep an explicit reference here so the
-        OptionsFlowHandler is usable both from HA and from unit tests that
-        construct it directly.
+        Recent Home Assistant defines `OptionsFlow.config_entry` as a
+        read-only property that derives the entry from `self.hass` and
+        `self.handler` (both assigned by the framework when the flow
+        starts). Assigning `self.config_entry = ...` therefore raises
+        `AttributeError`. We keep an explicit reference so the handler
+        is usable both from HA's flow machinery and from unit tests that
+        construct it directly without a running HA.
         """
         self._config_entry = config_entry
 
@@ -139,15 +155,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             {
                 vol.Required(
                     CONF_UPDATE_INTERVAL_HOURS, default=current
-                ): NumberSelector(
-                    NumberSelectorConfig(
-                        min=MIN_UPDATE_INTERVAL_HOURS,
-                        max=MAX_UPDATE_INTERVAL_HOURS,
-                        step=1,
-                        unit_of_measurement="hours",
-                        mode=NumberSelectorMode.BOX,
-                    )
-                ),
+                ): _update_interval_field(),
             }
         )
 
