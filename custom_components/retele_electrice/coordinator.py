@@ -67,7 +67,7 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         api: ReteleElectriceApi,
         pod: str,
-        update_interval_mins: int,
+        update_interval_hours: int,
     ) -> None:
         """Initialize the coordinator."""
         self.api = api
@@ -77,7 +77,7 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name="Retele Electrice",
-            update_interval=timedelta(minutes=update_interval_mins),
+            update_interval=timedelta(hours=update_interval_hours),
         )
 
     async def _async_update_data(self) -> dict[str, Any]:

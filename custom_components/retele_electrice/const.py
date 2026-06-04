@@ -3,9 +3,11 @@
 DOMAIN = "retele_electrice"
 
 CONF_POD = "pod"
-CONF_UPDATE_INTERVAL = "update_interval"
+CONF_UPDATE_INTERVAL_HOURS = "update_interval_hours"
 
-DEFAULT_UPDATE_INTERVAL = 720  # default 12 hours in minutes
+DEFAULT_UPDATE_INTERVAL_HOURS = 24
+MIN_UPDATE_INTERVAL_HOURS = 1
+MAX_UPDATE_INTERVAL_HOURS = 168  # 7 days
 
 
 def stat_id_prefix(pod: str) -> str:

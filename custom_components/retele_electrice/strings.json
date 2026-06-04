@@ -8,7 +8,7 @@
           "email": "Email address",
           "password": "Password",
           "pod": "POD (Point of Delivery) ID",
-          "update_interval": "Update interval (minutes)"
+          "update_interval_hours": "Update interval (hours)"
         }
       }
     },
@@ -19,6 +19,15 @@
     },
     "abort": {
       "already_configured": "This POD is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "update_interval_hours": "Update interval (hours)"
+        }
+      }
     }
   }
 }

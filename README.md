@@ -16,7 +16,7 @@ Custom component for [Home Assistant](https://www.home-assistant.io/) that impor
 
 ## Features
 
-- **Hourly electricity consumption and production in Home Assistant** — kWh import + export, refreshed automatically every 12 hours
+- **Hourly electricity consumption and production in Home Assistant** — kWh import + export, refreshed automatically every 24 hours (configurable)
 - **Full meter history on first install** — backfills everything the meter has recorded, going back to its installation date
 - **Energy Dashboard ready** — drop the import / export statistics straight into Home Assistant's built-in Energy Dashboard
 - **Per-POD device card** with last-sync timestamp, one-click manual refresh, and full contract / meter details (customer, address, contracted kW, supplier, meter brand and serial)
@@ -61,7 +61,7 @@ Click the badge above to open the setup dialog filtered to this integration, the
 - **Email** - your portal login email
 - **Password** - your portal password
 - **POD** - your Point of Delivery ID (e.g. `RO005EXXXXXXXXX`)
-- **Update interval** - how often to fetch data, in minutes (default: 720 = 12 hours)
+- **Update interval** - how often to fetch data, in hours (default: 24). You can change this later via **Settings** > **Devices & Services** > **Retele Electrice** > **Configure**.
 
 <details>
 <summary>Manual navigation (without the badge)</summary>

@@ -2,12 +2,20 @@
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform, CONF_EMAIL, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
 
-from .const import DOMAIN, CONF_POD, CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+from .const import (
+    DOMAIN,
+    CONF_POD,
+    CONF_UPDATE_INTERVAL_HOURS,
+    DEFAULT_UPDATE_INTERVAL_HOURS,
+    MAX_UPDATE_INTERVAL_HOURS,
+    MIN_UPDATE_INTERVAL_HOURS,
+)
 from .api import ReteleElectriceApi
 from .coordinator import ReteleElectriceCoordinator
 from .services import async_register_services
@@ -38,6 +46,41 @@ async def _has_existing_stats(hass: HomeAssistant, pod: str) -> bool:
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON]
 
+
+async def async_migrate_entry(hass, entry):
+    """Migrate entries from schema v1 (minutes) to v2 (hours)."""
+    if entry.version == 1:
+        # v1 stored update_interval in minutes; v2 stores update_interval_hours.
+        old_minutes = entry.data.get("update_interval", DEFAULT_UPDATE_INTERVAL_HOURS * 60)
+        new_hours = round(old_minutes / 60)
+        # Clamp to the bounds the new UI enforces.
+        new_hours = max(MIN_UPDATE_INTERVAL_HOURS, min(MAX_UPDATE_INTERVAL_HOURS, new_hours))
+
+        new_data = {k: v for k, v in entry.data.items() if k != "update_interval"}
+        new_data[CONF_UPDATE_INTERVAL_HOURS] = new_hours
+
+        hass.config_entries.async_update_entry(entry, data=new_data, version=2)
+
+    return True
+
+
+async def async_update_options(hass, entry):
+    """React to options-flow saves: update coordinator's interval in place."""
+    hours = entry.options.get(
+        CONF_UPDATE_INTERVAL_HOURS,
+        entry.data.get(CONF_UPDATE_INTERVAL_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS),
+    )
+    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    if coordinator is None:
+        # Setup hasn't populated hass.data yet; the new interval will be
+        # picked up by async_setup_entry on the next entry setup.
+        return
+    coordinator.update_interval = timedelta(hours=hours)
+    # Cancel the pending (old-interval) refresh and re-arm with the new interval.
+    # Without this the next refresh still fires at the previous schedule.
+    coordinator.async_set_updated_data(coordinator.data)
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Retele Electrice from a config entry."""
     hass.data.setdefault(DOMAIN, {})
@@ -45,17 +88,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     email = entry.data[CONF_EMAIL]
     password = entry.data[CONF_PASSWORD]
     pod = entry.data[CONF_POD]
-    update_interval = entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+    update_interval_hours = entry.options.get(
+        CONF_UPDATE_INTERVAL_HOURS,
+        entry.data.get(CONF_UPDATE_INTERVAL_HOURS, DEFAULT_UPDATE_INTERVAL_HOURS),
+    )
 
     api = ReteleElectriceApi(email, password)
-    
-    coordinator = ReteleElectriceCoordinator(hass, api, pod, update_interval)
+
+    coordinator = ReteleElectriceCoordinator(hass, api, pod, update_interval_hours)
     coordinator.config_entry = entry
 
     # Fetch initial data
     await coordinator.async_config_entry_first_refresh()
 
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # React to options-flow saves without requiring an HA restart.
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
