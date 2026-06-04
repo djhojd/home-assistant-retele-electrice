@@ -104,7 +104,7 @@ For richer per-POD dashboards (last sync, manual sync button, period totals, mul
 | Entity | Type | Description |
 |---|---|---|
 | `sensor.retele_electrice_<pod>_last_sync` | Sensor (timestamp) | Last successful data sync time |
-| `sensor.retele_electrice_<pod>_pod_info` | Sensor (diagnostic, timestamp) | Last POD info refresh time; attributes carry the full contract and meter detail dump |
+| `sensor.retele_electrice_<pod>_pod_info` | Sensor (timestamp) | Last POD info refresh time; attributes carry the full contract and meter detail dump |
 | `button.retele_electrice_<pod>_sync_button` | Button | Triggers a manual data refresh |
 | `button.retele_electrice_<pod>_refresh_pod_info` | Button | Manually re-fetch POD info from the portal |
 

@@ -168,7 +168,6 @@ class PodInfoSensor(SensorEntity):
     _attr_name = "POD info last sync"
     _attr_icon = "mdi:information-outline"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_should_poll = False
 
     # Romanian field names returned by the API; these populate DeviceInfo
