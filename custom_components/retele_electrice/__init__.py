@@ -47,7 +47,7 @@ async def _has_existing_stats(hass: HomeAssistant, pod: str) -> bool:
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON]
 
 
-async def async_migrate_entry(hass, entry):
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Migrate entries from schema v1 (minutes) to v2 (hours)."""
     if entry.version == 1:
         # v1 stored update_interval in minutes; v2 stores update_interval_hours.
@@ -60,11 +60,14 @@ async def async_migrate_entry(hass, entry):
         new_data[CONF_UPDATE_INTERVAL_HOURS] = new_hours
 
         hass.config_entries.async_update_entry(entry, data=new_data, version=2)
+        _LOGGER.info(
+            "Migrated update_interval %d min -> %d h", old_minutes, new_hours
+        )
 
     return True
 
 
-async def async_update_options(hass, entry):
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """React to options-flow saves: update coordinator's interval in place."""
     hours = entry.options.get(
         CONF_UPDATE_INTERVAL_HOURS,
