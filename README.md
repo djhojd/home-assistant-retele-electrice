@@ -24,6 +24,7 @@ Custom component for [Home Assistant](https://www.home-assistant.io/) that impor
 - **Energy Dashboard ready** — drop the import / export statistics straight into Home Assistant's built-in Energy Dashboard
 - **Per-POD device card** with last-sync timestamp, one-click manual refresh, and full contract / meter details (customer, address, contracted kW, supplier, meter brand and serial)
 - **Pre-built dashboards** — copy-paste Lovelace YAML for prosumer or non-prosumer setups, see [DASHBOARDS.md](DASHBOARDS.md)
+- **Automatic reconnect prompt on password expiry** — if the portal rejects your stored password, Home Assistant surfaces a notification asking for the new one instead of retrying forever
 
 ## Requirements
 
@@ -156,9 +157,10 @@ The service is synchronous and takes about 10 seconds for ~7 months of history (
 
 ## Troubleshooting
 
-### "Authentication failed"
+### "Authentication failed" / password expired
 
-- Verify your email and password work on [contulmeu.reteleelectrice.ro](https://contulmeu.reteleelectrice.ro)
+- Since v0.2.0, an invalid or expired password triggers a **Reconfigure** notification under **Settings** > **Devices & Services** instead of retrying forever. Click it, enter the current portal password, and the integration verifies it and resumes automatically.
+- If no such notification appears, verify your email and password still work on [contulmeu.reteleelectrice.ro](https://contulmeu.reteleelectrice.ro)
 - The portal uses Salesforce login - if the portal changes its login form structure, the integration may need updating
 
 ### "VF page ViewState not found"
