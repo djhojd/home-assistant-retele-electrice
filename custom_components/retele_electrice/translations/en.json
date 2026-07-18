@@ -10,6 +10,13 @@
           "pod": "POD (Point of Delivery) ID",
           "update_interval_hours": "Update interval (hours)"
         }
+      },
+      "reauth_confirm": {
+        "title": "Reconnect Retele Electrice",
+        "description": "The password on file for {email} was rejected — it may have expired or been changed on the portal. Enter the current password to reconnect.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -18,7 +25,8 @@
       "unknown": "Unexpected error. Check Home Assistant logs for details."
     },
     "abort": {
-      "already_configured": "This POD is already configured."
+      "already_configured": "This POD is already configured.",
+      "reauth_successful": "Password updated successfully."
     }
   },
   "options": {

@@ -20,6 +20,7 @@ from typing import Any
 import pytz
 
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -118,7 +119,11 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             return result
 
         except ReteleElectriceAuthError as err:
-            raise UpdateFailed(f"Authentication failed: {err}") from err
+            # Distinct from UpdateFailed: this tells HA the stored credentials
+            # (e.g. an expired portal password) are no longer valid, which
+            # stops the retry loop and starts a reauth flow instead of
+            # hammering the portal every update_interval.
+            raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
 

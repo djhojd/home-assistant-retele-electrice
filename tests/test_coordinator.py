@@ -685,3 +685,20 @@ async def test_async_update_data_monthly_refresh_failure_does_not_break_result(
     assert result["pod"] == coordinator.pod
     # Failure was logged, not raised.
     assert "Monthly POD info refresh" in caplog.text
+
+
+async def test_async_update_data_raises_config_entry_auth_failed_on_auth_error(
+    coordinator, fake_api
+):
+    """An expired/invalid portal password must trigger HA's reauth flow
+    (ConfigEntryAuthFailed), not a bare UpdateFailed. DataUpdateCoordinator
+    treats these differently: ConfigEntryAuthFailed halts the retry loop and
+    starts async_step_reauth instead of hammering the portal every cycle."""
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+
+    from custom_components.retele_electrice.api import ReteleElectriceAuthError
+
+    fake_api.login = AsyncMock(side_effect=ReteleElectriceAuthError("bad password"))
+
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
