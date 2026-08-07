@@ -1,12 +1,14 @@
 """Tests for ReteleElectriceApi parsing helpers."""
 from __future__ import annotations
 
+import asyncio
 from datetime import date
 from pathlib import Path
 
 import pytest
 
 from custom_components.retele_electrice.api import (
+    ReteleElectriceApi,
     _default_date_range,
     _parse_pod_info_response,
 )
@@ -76,3 +78,54 @@ def test_default_date_range_at_day_15_picks_first_of_month():
     start, end = _default_date_range(end_date=date(2026, 5, 15))
     assert end == date(2026, 5, 15)
     assert start == date(2026, 5, 1)
+
+
+async def test_login_serializes_concurrent_calls_for_the_same_email(monkeypatch):
+    """Two PODs sharing a portal account must not send concurrent login
+    POSTs. Confirmed live: two coordinators on the same account raced their
+    first-refresh logins 3ms apart and both got a false "invalid
+    credentials" error from the portal's account-scoped Salesforce session,
+    even though the password was correct. The per-email lock in `login`
+    must force one call to fully finish before the other starts."""
+    order: list[str] = []
+
+    async def fake_login_locked(self, pod):
+        order.append(f"{pod}:start")
+        await asyncio.sleep(0.01)
+        order.append(f"{pod}:end")
+        return True
+
+    monkeypatch.setattr(ReteleElectriceApi, "_login_locked", fake_login_locked)
+
+    api_a = ReteleElectriceApi("shared@example.com", "pw")
+    api_b = ReteleElectriceApi("shared@example.com", "pw")
+
+    await asyncio.gather(api_a.login("PODA"), api_b.login("PODB"))
+
+    first_pod = order[0].split(":")[0]
+    second_pod = order[2].split(":")[0]
+    assert order[1] == f"{first_pod}:end"  # first call fully finished...
+    assert second_pod != first_pod  # ...before the other one started
+    assert order[3] == f"{second_pod}:end"
+
+
+async def test_login_does_not_serialize_calls_for_different_emails(monkeypatch):
+    """Different portal accounts must not block each other's logins."""
+    order: list[str] = []
+
+    async def fake_login_locked(self, pod):
+        order.append(f"{pod}:start")
+        await asyncio.sleep(0.01)
+        order.append(f"{pod}:end")
+        return True
+
+    monkeypatch.setattr(ReteleElectriceApi, "_login_locked", fake_login_locked)
+
+    api_a = ReteleElectriceApi("a@example.com", "pw")
+    api_b = ReteleElectriceApi("b@example.com", "pw")
+
+    await asyncio.gather(api_a.login("PODA"), api_b.login("PODB"))
+
+    # Both calls started before either finished — they ran concurrently.
+    assert set(order[:2]) == {"PODA:start", "PODB:start"}
+    assert set(order[2:]) == {"PODA:end", "PODB:end"}

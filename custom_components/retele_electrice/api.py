@@ -21,6 +21,7 @@ Data retrieval:
   values in comma-decimal format (e.g. "0,384000;0,277000;...").
 """
 
+import asyncio
 import html
 import json
 import logging
@@ -37,6 +38,21 @@ _LOGGER = logging.getLogger(__name__)
 BASE_URL = "https://contulmeu.reteleelectrice.ro"
 PAGE_URL_TEMPLATE = f"{BASE_URL}/s/new-load-curves-client?pod={{pod}}"
 VF_URL = f"{BASE_URL}/PED_ProxyCallWSAsync_Curve_VF"
+
+# Two PODs on the same portal account get one ReteleElectriceApi instance
+# each, and each coordinator re-logs-in on every update cycle. The portal's
+# Salesforce login is account-scoped, not request-scoped: two concurrent
+# login POSTs for the same email can invalidate each other's ViewState/
+# session, surfacing as "No redirect after login POST" (i.e. what looks
+# like bad credentials) on BOTH PODs at once — confirmed live when both
+# entries' first-refresh logins landed 3ms apart at HA startup. Serializing
+# logins per email removes the race outright.
+_login_locks: dict[str, asyncio.Lock] = {}
+
+
+def _get_login_lock(email: str) -> asyncio.Lock:
+    """Return the shared login lock for `email`, creating it on first use."""
+    return _login_locks.setdefault(email, asyncio.Lock())
 
 
 # Snake_case keys in the queryPOD response that should be coerced to float.
@@ -218,6 +234,15 @@ class ReteleElectriceApi:
 
     async def login(self, pod: str) -> bool:
         """Log in and establish a Salesforce session (sid cookie).
+
+        Serialized per email via `_get_login_lock` — see its docstring for
+        why concurrent logins to the same account must not race.
+        """
+        async with _get_login_lock(self._email):
+            return await self._login_locked(pod)
+
+    async def _login_locked(self, pod: str) -> bool:
+        """Login body, run under the per-email lock held by `login`.
 
         Steps:
           1. GET the load-curves page → follow JS redirect to login form.
