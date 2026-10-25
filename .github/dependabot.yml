@@ -6,12 +6,13 @@ updates:
     schedule:
       interval: "weekly"
 
-  - package-ecosystem: "pip"
+  # "uv" (not "pip") so uv.lock is updated too. homeassistant is deliberately
+  # not ignored: bumping it tests against new HA releases and unblocks the
+  # security fixes for the packages it pins. hacs.json still sets the user minimum.
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
     ignore:
-      # Pinned to lru-dict>=1.4.1 override in pyproject.toml; see AGENTS.md.
+      # Pinned to lru-dict>=1.4.1 override in pyproject.toml; see the comment there.
       - dependency-name: "lru-dict"
-      # Home Assistant version is governed by hacs.json, not the dev extras.
-      - dependency-name: "homeassistant"
