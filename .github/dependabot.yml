@@ -5,6 +5,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    # Majors stay as separate PRs so one breaking action can't block the rest.
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
 
   # "uv" (not "pip") so uv.lock is updated too. homeassistant is deliberately
   # not ignored: bumping it tests against new HA releases and unblocks the
