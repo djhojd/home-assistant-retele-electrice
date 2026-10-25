@@ -28,7 +28,7 @@ import logging
 import re
 import uuid
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, Self
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -40,19 +40,49 @@ PAGE_URL_TEMPLATE = f"{BASE_URL}/s/new-load-curves-client?pod={{pod}}"
 VF_URL = f"{BASE_URL}/PED_ProxyCallWSAsync_Curve_VF"
 
 # Two PODs on the same portal account get one ReteleElectriceApi instance
-# each, and each coordinator re-logs-in on every update cycle. The portal's
-# Salesforce login is account-scoped, not request-scoped: two concurrent
-# login POSTs for the same email can invalidate each other's ViewState/
-# session, surfacing as "No redirect after login POST" (i.e. what looks
-# like bad credentials) on BOTH PODs at once — confirmed live when both
-# entries' first-refresh logins landed 3ms apart at HA startup. Serializing
-# logins per email removes the race outright.
-_login_locks: dict[str, asyncio.Lock] = {}
+# each. The portal's Salesforce session is account-scoped, not
+# request-scoped: a login for one POD can invalidate a *different* POD's
+# already-established session, not just collide with a concurrent login
+# POST. That means serializing login() alone isn't enough — a sibling POD's
+# login landing between "this POD logged in" and "this POD finished
+# fetching its data" still invalidates the session mid-fetch, surfacing as
+# "VF page ViewState not found" (i.e. what looks like an expired password)
+# even though nothing was wrong with it. The lock must therefore be held for
+# the whole authenticate-then-fetch sequence, not just the login POST —
+# hence a reentrant lock: the same coordinator cycle calls login() and then
+# get_consumption_data()/get_pod_info() while still holding the outer
+# account_lock(), and a plain asyncio.Lock would deadlock on that re-entry.
+class _ReentrantAsyncLock:
+    """An asyncio.Lock that a single task may re-acquire without blocking."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self._owner: asyncio.Task | None = None
+        self._depth = 0
+
+    async def __aenter__(self) -> Self:
+        current = asyncio.current_task()
+        if self._owner is current:
+            self._depth += 1
+            return self
+        await self._lock.acquire()
+        self._owner = current
+        self._depth = 1
+        return self
+
+    async def __aexit__(self, *_exc_info: object) -> None:
+        self._depth -= 1
+        if self._depth == 0:
+            self._owner = None
+            self._lock.release()
 
 
-def _get_login_lock(email: str) -> asyncio.Lock:
-    """Return the shared login lock for `email`, creating it on first use."""
-    return _login_locks.setdefault(email, asyncio.Lock())
+_login_locks: dict[str, _ReentrantAsyncLock] = {}
+
+
+def _get_login_lock(email: str) -> _ReentrantAsyncLock:
+    """Return the shared account lock for `email`, creating it on first use."""
+    return _login_locks.setdefault(email, _ReentrantAsyncLock())
 
 
 # Snake_case keys in the queryPOD response that should be coerced to float.
@@ -228,15 +258,39 @@ class ReteleElectriceApi:
                 vs[field_id] = el.get("value", "")
         return vs
 
+    @staticmethod
+    def _summarize_login_failure_page(html_post: str) -> str:
+        """Best-effort fingerprint of a login-POST response that had no JS
+        redirect, so the next occurrence tells us what the portal actually
+        showed instead of leaving us to guess: bounced back to the plain
+        login form (credentials rejected), a same-account concurrent-session
+        interstitial, a rate-limit/maintenance page, or something else."""
+        soup = BeautifulSoup(html_post, "html.parser")
+        form_again = soup.find("form", id="loginPage:loginForm") is not None
+        title = soup.title.get_text(strip=True) if soup.title else ""
+        text = " ".join(soup.get_text(separator=" ", strip=True).split())
+        return f"form_reshown={form_again} title={title!r} text_snippet={text[:300]!r}"
+
     # ------------------------------------------------------------------
     # Authentication
     # ------------------------------------------------------------------
 
+    def account_lock(self) -> _ReentrantAsyncLock:
+        """Return the account-wide lock for this API's email.
+
+        Callers that perform more than one portal request per logical cycle
+        (login, then fetch) must hold this for the whole cycle — see the
+        module-level comment above `_login_locks` for why login()'s own
+        internal lock isn't sufficient on its own.
+        """
+        return _get_login_lock(self._email)
+
     async def login(self, pod: str) -> bool:
         """Log in and establish a Salesforce session (sid cookie).
 
-        Serialized per email via `_get_login_lock` — see its docstring for
-        why concurrent logins to the same account must not race.
+        Serialized per email via `_get_login_lock`. Safe to call while
+        already holding `account_lock()` (e.g. from within a coordinator
+        cycle) — the lock is reentrant for the current task.
         """
         async with _get_login_lock(self._email):
             return await self._login_locked(pod)
@@ -261,10 +315,10 @@ class ReteleElectriceApi:
             if not form:
                 # Check if already authenticated (sid cookie present)
                 if any(c.key == "sid" for c in session.cookie_jar):
-                    _LOGGER.info("Already authenticated (sid cookie present)")
+                    _LOGGER.info("Already authenticated for POD %s (sid cookie present)", pod)
                     return True
-                _LOGGER.error("No login form found and no sid cookie")
-                raise ReteleElectriceAuthError("Login page not found")
+                _LOGGER.warning("No login form found and no sid cookie for POD %s", pod)
+                raise ReteleElectriceAuthError(f"Login page not found for POD {pod}")
 
             # Step 2 — Build login payload
             payload: dict[str, str] = {}
@@ -313,39 +367,70 @@ class ReteleElectriceApi:
             # Step 3 — Follow frontdoor.jsp redirect to establish sid cookie
             post_redir = self._find_js_redirect(html_post)
             if not post_redir:
+                _LOGGER.warning(
+                    "No redirect after login POST for POD %s — credentials may "
+                    "be invalid (%s)", pod, self._summarize_login_failure_page(html_post),
+                )
                 raise ReteleElectriceAuthError(
-                    "No redirect after login POST — credentials may be invalid"
+                    f"No redirect after login POST for POD {pod} — credentials "
+                    "may be invalid"
                 )
             if post_redir.startswith("/"):
                 post_redir = BASE_URL + post_redir
             await self._follow_js_redirects(session, post_redir)
 
             if not any(c.key == "sid" for c in session.cookie_jar):
-                raise ReteleElectriceAuthError("sid cookie not set after login")
+                _LOGGER.warning("sid cookie not set after login for POD %s", pod)
+                raise ReteleElectriceAuthError(f"sid cookie not set after login for POD {pod}")
 
-            _LOGGER.info("Login successful (sid cookie established)")
+            _LOGGER.info("Login successful for POD %s (sid cookie established)", pod)
             return True
 
         except ReteleElectriceAuthError:
             raise
         except Exception as exc:
-            _LOGGER.error("Login failed: %s", exc)
+            _LOGGER.error("Login failed for POD %s: %s", pod, exc)
             raise
 
     # ------------------------------------------------------------------
     # Data retrieval via VF page a4j postback
     # ------------------------------------------------------------------
 
-    async def _get_vf_viewstate(self, session: aiohttp.ClientSession) -> dict[str, str]:
-        """GET the VF page and extract its ViewState."""
+    async def _get_vf_viewstate(
+        self, session: aiohttp.ClientSession, pod: str
+    ) -> dict[str, str]:
+        """GET the VF page and extract its ViewState.
+
+        `pod` is for log/error context only — the request itself is session-
+        scoped, not POD-scoped.
+        """
         async with session.get(VF_URL, allow_redirects=True) as resp:
             resp.raise_for_status()
             html = await resp.text()
         soup = BeautifulSoup(html, "html.parser")
         vs = self._extract_viewstate(soup)
         if not vs.get("com.salesforce.visualforce.ViewState"):
+            # Distinguish "server sent us back to the login form" (the
+            # session was invalidated, most likely by a sibling POD on the
+            # same account logging in mid-cycle) from some other unexpected
+            # page — the two point at very different causes.
+            if soup.find("form", id="loginPage:loginForm"):
+                _LOGGER.warning(
+                    "VF page redirected to the login form for POD %s — "
+                    "session was invalidated (likely a sibling POD on the "
+                    "same account logging in mid-cycle)", pod,
+                )
+                raise ReteleElectriceAuthError(
+                    f"Session invalidated for POD {pod} — VF page redirected "
+                    "to the login form"
+                )
+            _LOGGER.warning(
+                "VF page ViewState not found for POD %s and no login form "
+                "either — unexpected page", pod,
+            )
             raise ReteleElectriceAuthError(
-                "VF page ViewState not found — session may have expired"
+                f"VF page ViewState not found for POD {pod} — session may "
+                "have expired"
             )
         return vs
 
@@ -453,7 +538,7 @@ class ReteleElectriceApi:
 
         try:
             # Get fresh ViewState from the VF page
-            vs = await self._get_vf_viewstate(session)
+            vs = await self._get_vf_viewstate(session, pod)
 
             all_records: list[dict[str, Any]] = []
 
@@ -468,7 +553,7 @@ class ReteleElectriceApi:
             # Fetch export (WE) data
             params_we = f"{start_str},{end_str},{pod},WE,"
             _LOGGER.debug("VF postback ValoriDiEnergia (export): %s", params_we)
-            html_we, vs = await self._vf_postback(session, vs, "ValoriDiEnergia", params_we)
+            html_we, _ = await self._vf_postback(session, vs, "ValoriDiEnergia", params_we)
             records_we = self._parse_async_response(html_we)
             _LOGGER.debug("ValoriDiEnergia (export) returned %d records", len(records_we))
             all_records.extend(records_we)
@@ -476,7 +561,7 @@ class ReteleElectriceApi:
             return all_records
 
         except Exception as exc:
-            _LOGGER.error("Failed to fetch consumption data: %s", exc)
+            _LOGGER.error("Failed to fetch consumption data for POD %s: %s", pod, exc)
             raise
 
     async def get_pod_info(self, pod: str) -> dict[str, Any]:
@@ -486,7 +571,7 @@ class ReteleElectriceApi:
         have called login(pod) first.
         """
         session = await self._get_session()
-        vs = await self._get_vf_viewstate(session)
+        vs = await self._get_vf_viewstate(session, pod)
 
         method_name = "queryPOD"
         params = f"{pod},Client_Company"

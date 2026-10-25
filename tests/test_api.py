@@ -129,3 +129,73 @@ async def test_login_does_not_serialize_calls_for_different_emails(monkeypatch):
     # Both calls started before either finished — they ran concurrently.
     assert set(order[:2]) == {"PODA:start", "PODB:start"}
     assert set(order[2:]) == {"PODA:end", "PODB:end"}
+
+
+async def test_account_lock_holds_across_login_and_fetch(monkeypatch):
+    """The v0.2.1 lock only covered login() itself, which left a gap: POD B
+    could log in *while POD A was still fetching*, and since the portal's
+    session is account-scoped, that invalidated POD A's session mid-fetch —
+    surfacing as a false "session expired" error. A caller (e.g. the
+    coordinator) that holds `account_lock()` across login()+fetch must block
+    the other POD for the *entire* cycle, not just the login step."""
+    order: list[str] = []
+
+    async def fake_login_locked(_self, pod):
+        order.append(f"{pod}:login_start")
+        await asyncio.sleep(0.01)
+        order.append(f"{pod}:login_end")
+        return True
+
+    async def fake_get_consumption_data(_self, pod, *_args, **_kwargs):
+        order.append(f"{pod}:fetch_start")
+        await asyncio.sleep(0.01)
+        order.append(f"{pod}:fetch_end")
+        return []
+
+    monkeypatch.setattr(ReteleElectriceApi, "_login_locked", fake_login_locked)
+    monkeypatch.setattr(
+        ReteleElectriceApi, "get_consumption_data", fake_get_consumption_data
+    )
+
+    # A dedicated email, distinct from other tests' "shared@example.com" —
+    # the per-email lock is cached at module scope, and reusing a lock
+    # object across tests bound to different event loops raises.
+    api_a = ReteleElectriceApi("shared-cycle@example.com", "pw")
+    api_b = ReteleElectriceApi("shared-cycle@example.com", "pw")
+
+    async def cycle(api, pod):
+        async with api.account_lock():
+            await api.login(pod)
+            await api.get_consumption_data(pod)
+
+    await asyncio.gather(cycle(api_a, "PODA"), cycle(api_b, "PODB"))
+
+    first_pod = order[0].split(":")[0]
+    second_pod = "PODB" if first_pod == "PODA" else "PODA"
+    # The first POD's entire cycle (login *and* fetch) must finish before
+    # the second POD's login starts — not just the first POD's login.
+    assert order[:4] == [
+        f"{first_pod}:login_start",
+        f"{first_pod}:login_end",
+        f"{first_pod}:fetch_start",
+        f"{first_pod}:fetch_end",
+    ]
+    assert order[4] == f"{second_pod}:login_start"
+
+
+async def test_account_lock_is_reentrant_for_login(monkeypatch):
+    """login() acquires the same per-email lock internally. A caller already
+    holding account_lock() (as the coordinator now does) must not deadlock
+    when it then calls login()."""
+
+    async def fake_login_locked(_self, _pod):
+        return True
+
+    monkeypatch.setattr(ReteleElectriceApi, "_login_locked", fake_login_locked)
+
+    api = ReteleElectriceApi("reentrant@example.com", "pw")
+
+    async with api.account_lock():
+        result = await asyncio.wait_for(api.login("PODA"), timeout=1)
+
+    assert result is True

@@ -84,37 +84,43 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from API and import it into HA statistics."""
         try:
-            # Re-authenticate on every cycle; session may expire between updates
-            await self.api.login(self.pod)
+            # Hold the account lock for the whole login-then-fetch sequence,
+            # not just login() — a sibling POD on the same account logging in
+            # partway through this cycle can otherwise invalidate this
+            # session between the login and the fetch (see account_lock()'s
+            # docstring / the module comment above _login_locks in api.py).
+            async with self.api.account_lock():
+                # Re-authenticate on every cycle; session may expire between updates
+                await self.api.login(self.pod)
 
-            records = await self.api.get_consumption_data(self.pod)
+                records = await self.api.get_consumption_data(self.pod)
 
-            if records:
-                await self._import_statistics(records)
-                _LOGGER.info(
-                    "Imported %d daily records for POD %s", len(records), self.pod
-                )
-            else:
-                _LOGGER.warning("No consumption records returned for POD %s", self.pod)
-
-            result = {
-                "last_update": datetime.now(tz=timezone.utc),
-                "records_count": len(records),
-                "pod": self.pod,
-            }
-
-            # Calendar-monthly POD-info auto-refresh. Fires on the first
-            # coordinator tick of each Bucharest calendar month, or whenever
-            # the anchor is missing/malformed. Failures are logged but never
-            # affect the consumption-data result (the contract of this method).
-            if self._should_refresh_pod_info_monthly():
-                try:
-                    await self.async_refresh_pod_info()
-                except Exception:
-                    _LOGGER.warning(
-                        "Monthly POD info refresh for %s failed; will retry "
-                        "next cycle", self.pod, exc_info=True,
+                if records:
+                    await self._import_statistics(records)
+                    _LOGGER.info(
+                        "Imported %d daily records for POD %s", len(records), self.pod
                     )
+                else:
+                    _LOGGER.warning("No consumption records returned for POD %s", self.pod)
+
+                result = {
+                    "last_update": datetime.now(tz=timezone.utc),
+                    "records_count": len(records),
+                    "pod": self.pod,
+                }
+
+                # Calendar-monthly POD-info auto-refresh. Fires on the first
+                # coordinator tick of each Bucharest calendar month, or whenever
+                # the anchor is missing/malformed. Failures are logged but never
+                # affect the consumption-data result (the contract of this method).
+                if self._should_refresh_pod_info_monthly():
+                    try:
+                        await self.async_refresh_pod_info()
+                    except Exception:
+                        _LOGGER.warning(
+                            "Monthly POD info refresh for %s failed; will retry "
+                            "next cycle", self.pod, exc_info=True,
+                        )
 
             return result
 
@@ -161,7 +167,13 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         """
         _LOGGER.info("Refreshing POD info for %s", self.pod)
         try:
-            new_info = await self.api.get_pod_info(self.pod)
+            # Reentrant: a no-op re-acquire when already called from within
+            # _async_update_data's own account_lock() (the monthly-refresh
+            # path); a fresh acquire when triggered standalone (button press,
+            # first-install hook) — either way a sibling POD's login can't
+            # invalidate this session mid-request.
+            async with self.api.account_lock():
+                new_info = await self.api.get_pod_info(self.pod)
         except Exception:
             _LOGGER.warning(
                 "POD info refresh failed for %s", self.pod, exc_info=True
@@ -228,35 +240,40 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         today = date.today()
         all_records: list[dict[str, Any]] = []
         consecutive_empty = 0
-        for month_start, month_end in _iter_months(from_date, today):
-            try:
-                records = await self.api.get_consumption_data(
-                    self.pod, month_start, month_end
-                )
-            except Exception:
-                _LOGGER.warning(
-                    "Backfill: failed for %s window %s..%s; partial data kept",
-                    self.pod, month_start, month_end, exc_info=True,
-                )
-                break
-            _LOGGER.debug(
-                "Backfill: %s..%s → %d records",
-                month_start, month_end, len(records),
-            )
-            if records:
-                consecutive_empty = 0
-                all_records.extend(records)
-            else:
-                consecutive_empty += 1
-                if consecutive_empty >= 3:
+        # Held for the whole loop, not per-call: a sibling POD's periodic
+        # cycle logging in partway through a multi-month backfill would
+        # otherwise invalidate this session the same way described in
+        # account_lock()'s docstring.
+        async with self.api.account_lock():
+            for month_start, month_end in _iter_months(from_date, today):
+                try:
+                    records = await self.api.get_consumption_data(
+                        self.pod, month_start, month_end
+                    )
+                except Exception:
                     _LOGGER.warning(
-                        "Backfill: %d consecutive empty months for %s "
-                        "(last: %s); aborting. Likely a non-smart POD or "
-                        "a date range before data was available. Pass an "
-                        "explicit 'from' date later to force a deeper search.",
-                        consecutive_empty, self.pod, month_start.isoformat(),
+                        "Backfill: failed for %s window %s..%s; partial data kept",
+                        self.pod, month_start, month_end, exc_info=True,
                     )
                     break
+                _LOGGER.debug(
+                    "Backfill: %s..%s → %d records",
+                    month_start, month_end, len(records),
+                )
+                if records:
+                    consecutive_empty = 0
+                    all_records.extend(records)
+                else:
+                    consecutive_empty += 1
+                    if consecutive_empty >= 3:
+                        _LOGGER.warning(
+                            "Backfill: %d consecutive empty months for %s "
+                            "(last: %s); aborting. Likely a non-smart POD or "
+                            "a date range before data was available. Pass an "
+                            "explicit 'from' date later to force a deeper search.",
+                            consecutive_empty, self.pod, month_start.isoformat(),
+                        )
+                        break
 
         if all_records:
             await self._import_statistics(all_records)
