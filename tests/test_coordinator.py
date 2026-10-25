@@ -767,6 +767,25 @@ async def test_auth_failure_clock_survives_coordinator_recreation(
         await fresh_coordinator()._async_update_data()
 
 
+async def test_password_change_required_requests_reauth_immediately(
+    coordinator, fake_api
+):
+    """A forced password change never clears on its own, so it skips the
+    24h grace period that a transient lockout gets."""
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+
+    from custom_components.retele_electrice.api import (
+        ReteleElectricePasswordChangeRequired,
+    )
+
+    fake_api.login = AsyncMock(
+        side_effect=ReteleElectricePasswordChangeRequired("change it")
+    )
+
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
+
+
 async def test_async_update_data_success_resets_auth_failure_tracking(
     coordinator, fake_api
 ):

@@ -25,7 +25,11 @@ from .const import (
     MIN_UPDATE_INTERVAL_HOURS,
     current_update_interval_hours,
 )
-from .api import ReteleElectriceApi, ReteleElectriceAuthError
+from .api import (
+    ReteleElectriceApi,
+    ReteleElectriceAuthError,
+    ReteleElectricePasswordChangeRequired,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -70,6 +74,8 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
 
     try:
         await api.login(pod)
+    except ReteleElectricePasswordChangeRequired as e:
+        raise PasswordChangeRequired from e
     except ReteleElectriceAuthError as e:
         raise InvalidAuth from e
     except Exception as e:
@@ -104,6 +110,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=info["title"], data=user_input)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
+            except PasswordChangeRequired:
+                errors["base"] = "password_change_required"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             except Exception:
@@ -124,28 +132,40 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Ask for a new password and validate it before saving."""
+        return await self._async_update_password(
+            "reauth_confirm", self._get_reauth_entry(), user_input
+        )
+
+    async def _async_update_password(
+        self,
+        step_id: str,
+        entry: config_entries.ConfigEntry,
+        user_input: dict[str, Any] | None,
+    ) -> ConfigFlowResult:
+        """Show the password form, validate the new password, save and reload."""
         errors: dict[str, str] = {}
-        reauth_entry = self._get_reauth_entry()
 
         if user_input is not None:
-            new_data = {**reauth_entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
+            new_data = {**entry.data, CONF_PASSWORD: user_input[CONF_PASSWORD]}
             try:
                 await validate_input(self.hass, new_data)
             except CannotConnect:
                 errors["base"] = "cannot_connect"
+            except PasswordChangeRequired:
+                errors["base"] = "password_change_required"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
             except Exception:
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
             else:
-                return self.async_update_reload_and_abort(reauth_entry, data=new_data)
+                return self.async_update_reload_and_abort(entry, data=new_data)
 
         return self.async_show_form(
-            step_id="reauth_confirm",
+            step_id=step_id,
             data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
             errors=errors,
-            description_placeholders={CONF_EMAIL: reauth_entry.data[CONF_EMAIL]},
+            description_placeholders={CONF_EMAIL: entry.data[CONF_EMAIL]},
         )
 
 class CannotConnect(HomeAssistantError):
@@ -154,6 +174,10 @@ class CannotConnect(HomeAssistantError):
 
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+
+class PasswordChangeRequired(InvalidAuth):
+    """Error to indicate the portal wants the password changed first."""
 
 
 class OptionsFlowHandler(config_entries.OptionsFlow):

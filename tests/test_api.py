@@ -8,10 +8,51 @@ from pathlib import Path
 import pytest
 
 from custom_components.retele_electrice.api import (
+    BASE_URL,
     ReteleElectriceApi,
+    ReteleElectricePasswordChangeRequired,
     _default_date_range,
     _parse_pod_info_response,
 )
+
+LOGIN_FORM_HTML = """
+<form id="loginPage:loginForm" action="">
+  <input type="text" name="loginPage:loginForm:username" value="">
+  <input type="password" name="loginPage:loginForm:password" value="">
+</form>
+"""
+CHANGE_PASSWORD_URL = (
+    f"{BASE_URL}/_ui/system/security/ChangePassword"
+    "?retURL=%2Fapex%2FCommunitiesLanding&fromFrontdoor=1&setupid=ChangePassword"
+)
+
+
+class _FakeResponse:
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_exc_info):
+        return None
+
+    def raise_for_status(self) -> None:
+        return None
+
+    async def text(self) -> str:
+        return self._text
+
+
+class _FakeSession:
+    """Answers the login POST with the frontdoor.jsp JS redirect."""
+
+    cookie_jar: list = []
+
+    def post(self, *_args, **_kwargs):
+        return _FakeResponse(
+            "<script>window.location.replace('/secur/frontdoor.jsp?x=1')</script>"
+        )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -199,3 +240,46 @@ async def test_account_lock_is_reentrant_for_login(monkeypatch):
         result = await asyncio.wait_for(api.login("PODA"), timeout=1)
 
     assert result is True
+
+
+async def test_login_raises_password_change_required_after_frontdoor(monkeypatch):
+    """Observed live: an expired password still logs in, but frontdoor.jsp
+    lands on the change-password page and every data request then 500s.
+    login() must name that case instead of reporting success."""
+    landings = iter([
+        (LOGIN_FORM_HTML, f"{BASE_URL}/PEDRO_SiteLogin"),
+        ("<html>Change your password</html>", CHANGE_PASSWORD_URL),
+    ])
+
+    async def fake_follow(self, session, url, max_hops=8):
+        return next(landings)
+
+    async def fake_session(self):
+        return _FakeSession()
+
+    monkeypatch.setattr(ReteleElectriceApi, "_follow_js_redirects", fake_follow)
+    monkeypatch.setattr(ReteleElectriceApi, "_get_session", fake_session)
+
+    api = ReteleElectriceApi("change@example.com", "expired")
+
+    with pytest.raises(ReteleElectricePasswordChangeRequired):
+        await api.login("PODA")
+
+
+async def test_login_raises_password_change_required_on_existing_session(monkeypatch):
+    """A session already parked on the change-password page must not count
+    as "already authenticated"."""
+
+    async def fake_follow(self, session, url, max_hops=8):
+        return "<html>Change your password</html>", CHANGE_PASSWORD_URL
+
+    async def fake_session(self):
+        return _FakeSession()
+
+    monkeypatch.setattr(ReteleElectriceApi, "_follow_js_redirects", fake_follow)
+    monkeypatch.setattr(ReteleElectriceApi, "_get_session", fake_session)
+
+    api = ReteleElectriceApi("parked@example.com", "expired")
+
+    with pytest.raises(ReteleElectricePasswordChangeRequired):
+        await api.login("PODA")

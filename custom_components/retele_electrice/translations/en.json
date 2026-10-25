@@ -22,6 +22,7 @@
     "error": {
       "cannot_connect": "Failed to connect. Please check your network and try again.",
       "invalid_auth": "Invalid credentials. Please verify your email and password.",
+      "password_change_required": "The portal requires a password change. Log in at contulmeu.reteleelectrice.ro, change your password, then enter the new one here.",
       "unknown": "Unexpected error. Check Home Assistant logs for details."
     },
     "abort": {

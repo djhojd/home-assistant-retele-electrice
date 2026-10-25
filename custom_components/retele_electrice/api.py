@@ -165,6 +165,15 @@ class ReteleElectriceAuthError(Exception):
     """Raised when authentication fails."""
 
 
+class ReteleElectricePasswordChangeRequired(ReteleElectriceAuthError):
+    """Raised when the portal accepts the password but forces a change first."""
+
+
+# Observed live: an expired password still logs in, but frontdoor.jsp lands
+# on this page instead of the portal, and every data request then 500s.
+CHANGE_PASSWORD_PATH = "/_ui/system/security/ChangePassword"
+
+
 def _default_date_range(end_date: date | None = None) -> tuple[date, date]:
     """Default fetch window: covers the full current calendar month and at
     least the last 14 days, whichever is wider.
@@ -230,18 +239,34 @@ class ReteleElectriceApi:
 
     async def _follow_js_redirects(
         self, session: aiohttp.ClientSession, url: str, max_hops: int = 8
-    ) -> str:
-        """GET a URL, following JS redirects until a real page is reached."""
+    ) -> tuple[str, str]:
+        """GET a URL, following JS redirects until a real page is reached.
+
+        Returns the page HTML and the URL it was finally served from.
+        """
         for _ in range(max_hops):
             async with session.get(url, allow_redirects=True) as resp:
                 resp.raise_for_status()
                 html = await resp.text()
+                final_url = str(resp.url)
             redir = self._find_js_redirect(html)
             if redir:
                 url = redir if redir.startswith("http") else BASE_URL + redir
                 continue
-            return html
-        return html
+            return html, final_url
+        return html, final_url
+
+    @staticmethod
+    def _raise_if_password_change_required(url: str, pod: str) -> None:
+        """Raise when the portal parked the session on its change-password page."""
+        if CHANGE_PASSWORD_PATH in url:
+            _LOGGER.warning(
+                "Portal requires a password change for POD %s; log in at "
+                "%s, change it, then reconfigure the integration", pod, BASE_URL,
+            )
+            raise ReteleElectricePasswordChangeRequired(
+                f"Portal requires a password change for POD {pod}"
+            )
 
     @staticmethod
     def _extract_viewstate(soup: BeautifulSoup) -> dict[str, str]:
@@ -308,7 +333,8 @@ class ReteleElectriceApi:
 
         try:
             # Step 1 — Navigate to login form (follow JS redirects)
-            html = await self._follow_js_redirects(session, page_url)
+            html, landed_url = await self._follow_js_redirects(session, page_url)
+            self._raise_if_password_change_required(landed_url, pod)
             soup = BeautifulSoup(html, "html.parser")
             form = soup.find("form", id="loginPage:loginForm")
 
@@ -377,7 +403,8 @@ class ReteleElectriceApi:
                 )
             if post_redir.startswith("/"):
                 post_redir = BASE_URL + post_redir
-            await self._follow_js_redirects(session, post_redir)
+            _, landed_url = await self._follow_js_redirects(session, post_redir)
+            self._raise_if_password_change_required(landed_url, pod)
 
             if not any(c.key == "sid" for c in session.cookie_jar):
                 _LOGGER.warning("sid cookie not set after login for POD %s", pod)

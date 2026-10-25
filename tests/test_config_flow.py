@@ -187,3 +187,21 @@ async def test_options_flow_saves_new_interval():
 
     assert result["type"] == "create_entry"
     assert result["data"] == {CONF_UPDATE_INTERVAL_HOURS: 48}
+
+
+async def test_reauth_confirm_password_change_required_shows_error():
+    """A password the portal still wants changed gets its own error, not the
+    generic invalid_auth, so the user knows to change it on the portal first."""
+    flow, _entry = _make_reauth_flow(_entry_data())
+
+    with patch.object(
+        config_flow,
+        "validate_input",
+        AsyncMock(side_effect=config_flow.PasswordChangeRequired()),
+    ):
+        result = await flow.async_step_reauth_confirm(
+            user_input={CONF_PASSWORD: "expired"}
+        )
+
+    assert result["type"] == "form"
+    assert result["errors"] == {"base": "password_change_required"}

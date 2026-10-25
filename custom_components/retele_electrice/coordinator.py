@@ -31,7 +31,11 @@ from homeassistant.components.recorder.statistics import (
 )
 from homeassistant.components.recorder.util import get_instance
 
-from .api import ReteleElectriceApi, ReteleElectriceAuthError
+from .api import (
+    ReteleElectriceApi,
+    ReteleElectriceAuthError,
+    ReteleElectricePasswordChangeRequired,
+)
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -145,6 +149,9 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             _auth_failure_since.pop(self.pod, None)
             return result
 
+        except ReteleElectricePasswordChangeRequired as err:
+            # Unlike a rejected password, this never clears on its own.
+            raise ConfigEntryAuthFailed(str(err)) from err
         except ReteleElectriceAuthError as err:
             now = datetime.now(tz=timezone.utc)
             failing_for = now - _auth_failure_since.setdefault(self.pod, now)
