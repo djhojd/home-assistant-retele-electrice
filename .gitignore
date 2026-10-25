@@ -23,3 +23,6 @@ dev/
 # Agent / Claude Code guides — local convention, not for the public repo.
 AGENTS.md
 CLAUDE.md
+
+# MCP server config; its URLs can carry access tokens.
+.mcp.json
