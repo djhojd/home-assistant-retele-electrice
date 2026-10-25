@@ -7,7 +7,7 @@ coordinator's `_push_statistics` helper.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -33,6 +33,7 @@ def coordinator(mock_hass, fake_api):
     coord.hass = mock_hass
     coord.api = fake_api
     coord.pod = POD
+    coord._auth_failure_since = None
     return coord
 
 
@@ -687,18 +688,63 @@ async def test_async_update_data_monthly_refresh_failure_does_not_break_result(
     assert "Monthly POD info refresh" in caplog.text
 
 
-async def test_async_update_data_raises_config_entry_auth_failed_on_auth_error(
+async def test_async_update_data_retries_via_update_failed_on_first_auth_error(
     coordinator, fake_api
 ):
-    """An expired/invalid portal password must trigger HA's reauth flow
-    (ConfigEntryAuthFailed), not a bare UpdateFailed. DataUpdateCoordinator
-    treats these differently: ConfigEntryAuthFailed halts the retry loop and
-    starts async_step_reauth instead of hammering the portal every cycle."""
+    """A fresh auth failure must NOT immediately trigger HA's reauth flow.
+
+    Observed live: the portal periodically rejects a correct, unchanged
+    password for a few hours (an account-level lockout/cooldown), then
+    accepts it again with no user action. Escalating straight to
+    ConfigEntryAuthFailed on every such failure would force a manual reauth
+    for what usually clears on its own. Instead, the first failure raises
+    UpdateFailed with retry_after set, which DataUpdateCoordinator uses to
+    reschedule automatically (unlike ConfigEntryAuthFailed, which halts
+    polling until reauth completes) -- see AUTH_RETRY_INTERVAL."""
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.retele_electrice.api import ReteleElectriceAuthError
+    from custom_components.retele_electrice.coordinator import AUTH_RETRY_INTERVAL
+
+    fake_api.login = AsyncMock(side_effect=ReteleElectriceAuthError("bad password"))
+
+    with pytest.raises(UpdateFailed) as exc_info:
+        await coordinator._async_update_data()
+
+    assert not isinstance(exc_info.value, ConfigEntryAuthFailed)
+    assert exc_info.value.retry_after == AUTH_RETRY_INTERVAL.total_seconds()
+    assert coordinator._auth_failure_since is not None
+
+
+async def test_async_update_data_escalates_to_reauth_after_grace_period(
+    coordinator, fake_api
+):
+    """Once auth has been failing continuously for longer than
+    AUTH_FAILURE_ESCALATE_AFTER, fall back to the reauth flow -- a genuinely
+    expired/changed password must not retry silently forever."""
     from homeassistant.exceptions import ConfigEntryAuthFailed
 
     from custom_components.retele_electrice.api import ReteleElectriceAuthError
 
     fake_api.login = AsyncMock(side_effect=ReteleElectriceAuthError("bad password"))
+    coordinator._auth_failure_since = datetime.now(tz=timezone.utc) - timedelta(hours=25)
 
     with pytest.raises(ConfigEntryAuthFailed):
         await coordinator._async_update_data()
+
+
+async def test_async_update_data_success_resets_auth_failure_tracking(
+    coordinator, fake_api
+):
+    """A successful cycle clears any in-progress auth-failure tracking, so a
+    later failure starts a fresh grace period rather than inheriting one
+    from an unrelated earlier incident."""
+    fake_api.get_consumption_data = AsyncMock(return_value=[])
+    coordinator._import_statistics = AsyncMock()
+    coordinator._should_refresh_pod_info_monthly = MagicMock(return_value=False)
+    coordinator._auth_failure_since = datetime.now(tz=timezone.utc) - timedelta(hours=2)
+
+    await coordinator._async_update_data()
+
+    assert coordinator._auth_failure_since is None

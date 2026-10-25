@@ -159,8 +159,9 @@ The service is synchronous and takes about 10 seconds for ~7 months of history (
 
 ### "Authentication failed" / password expired
 
-- Since v0.2.0, an invalid or expired password triggers a **Reconfigure** notification under **Settings** > **Devices & Services** instead of retrying forever. Click it, enter the current portal password, and the integration verifies it and resumes automatically.
-- If no such notification appears, verify your email and password still work on [contulmeu.reteleelectrice.ro](https://contulmeu.reteleelectrice.ro)
+- The portal itself occasionally rejects a correct, unchanged password for a short window (observed: roughly 10-20 minutes), most often right after a Home Assistant restart, before accepting it again with no action needed. This looks like a temporary account-level login lockout/cooldown on the vendor's side, not an actual password change. The integration retries quietly (every hour) rather than bothering you for this.
+- If the password is genuinely invalid or has actually changed, auth keeps failing for a full 24 hours straight, and only then does the integration raise a **Reconfigure** notification under **Settings** > **Devices & Services**. Click it, enter the current portal password, and the integration verifies it and resumes automatically.
+- If you get that notification, first verify your email and password still work on [contulmeu.reteleelectrice.ro](https://contulmeu.reteleelectrice.ro) - if they do, the portal-side lockout may just be taking longer than usual to clear; wait it out rather than repeatedly re-entering the same password (which may prolong the lockout).
 - The portal uses Salesforce login - if the portal changes its login form structure, the integration may need updating
 
 ### "VF page ViewState not found"

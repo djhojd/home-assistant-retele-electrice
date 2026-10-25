@@ -40,6 +40,20 @@ TZ_BUCHAREST = pytz.timezone("Europe/Bucharest")
 ENERGY_TYPE_IMPORT = "WI"
 ENERGY_TYPE_EXPORT = "WE"
 
+# Observed live: the portal periodically rejects a correct, unchanged
+# password for a few hours at a time (matches an account-level login
+# lockout/cooldown, not an actual password change) before accepting it
+# again with no user action. Escalating straight to ConfigEntryAuthFailed
+# on every such failure forces a manual reauth for what is usually a
+# transient condition that clears on its own. Instead, retry quietly on
+# an hourly cadence via UpdateFailed's retry_after (which reschedules the
+# coordinator without halting it, unlike ConfigEntryAuthFailed) and only
+# fall back to the reauth flow if it's still failing after a full day —
+# that keeps a genuinely expired/changed password from failing silently
+# forever.
+AUTH_RETRY_INTERVAL = timedelta(hours=1)
+AUTH_FAILURE_ESCALATE_AFTER = timedelta(hours=24)
+
 
 def _iter_months(start: date, end: date) -> Iterator[tuple[date, date]]:
     """Yield (month_start, month_end) tuples covering [start, end].
@@ -73,6 +87,7 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         """Initialize the coordinator."""
         self.api = api
         self.pod = pod
+        self._auth_failure_since: datetime | None = None
 
         super().__init__(
             hass,
@@ -122,13 +137,34 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
                             "next cycle", self.pod, exc_info=True,
                         )
 
+            self._auth_failure_since = None
             return result
 
         except ReteleElectriceAuthError as err:
+            now = datetime.now(tz=timezone.utc)
+            if self._auth_failure_since is None:
+                self._auth_failure_since = now
+            failing_for = now - self._auth_failure_since
+
+            if failing_for < AUTH_FAILURE_ESCALATE_AFTER:
+                _LOGGER.warning(
+                    "Authentication failed for POD %s (failing for %s so far); "
+                    "retrying in %s before requiring reauth: %s",
+                    self.pod, failing_for, AUTH_RETRY_INTERVAL, err,
+                )
+                raise UpdateFailed(
+                    f"Authentication failed: {err}",
+                    retry_after=AUTH_RETRY_INTERVAL.total_seconds(),
+                ) from err
+
             # Distinct from UpdateFailed: this tells HA the stored credentials
             # (e.g. an expired portal password) are no longer valid, which
             # stops the retry loop and starts a reauth flow instead of
             # hammering the portal every update_interval.
+            _LOGGER.warning(
+                "Authentication failed for POD %s for over %s; requesting "
+                "reauth: %s", self.pod, AUTH_FAILURE_ESCALATE_AFTER, err,
+            )
             raise ConfigEntryAuthFailed(f"Authentication failed: {err}") from err
         except Exception as err:
             raise UpdateFailed(f"Error communicating with API: {err}") from err
