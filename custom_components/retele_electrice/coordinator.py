@@ -335,7 +335,15 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
     def _update_device_registry(self, pod_info: dict[str, Any]) -> None:
         """Push meter fields from pod_info onto the device registry row."""
         device_reg = dr.async_get(self.hass)
-        device = device_reg.async_get_device(identifiers={(DOMAIN, self.pod)})
+        # ponytail: drop the fallback once the minimum HA is 2026.8, where
+        # async_get_device_by_identifier appeared; async_get_device stops
+        # working in 2027.8.
+        if hasattr(device_reg, "async_get_device_by_identifier"):
+            device = device_reg.async_get_device_by_identifier(
+                (DOMAIN, self.pod), self.config_entry.entry_id
+            )
+        else:
+            device = device_reg.async_get_device(identifiers={(DOMAIN, self.pod)})
         if device is None:
             _LOGGER.debug(
                 "Device for %s not in registry yet; skipping update", self.pod

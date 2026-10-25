@@ -257,7 +257,7 @@ async def test_refresh_pod_info_updates_device_registry(
     fake_device = MagicMock()
     fake_device.id = "fake_device_id"
     fake_registry = MagicMock()
-    fake_registry.async_get_device = MagicMock(return_value=fake_device)
+    fake_registry.async_get_device_by_identifier = MagicMock(return_value=fake_device)
     fake_registry.async_update_device = MagicMock()
     monkeypatch.setattr(
         "custom_components.retele_electrice.coordinator.dr.async_get",
@@ -287,8 +287,34 @@ async def test_update_device_registry_clears_hw_version_with_empty_pod_info(
     fake_device = MagicMock()
     fake_device.id = "fake_device_id"
     fake_registry = MagicMock()
-    fake_registry.async_get_device = MagicMock(return_value=fake_device)
+    fake_registry.async_get_device_by_identifier = MagicMock(return_value=fake_device)
     fake_registry.async_update_device = MagicMock()
+    monkeypatch.setattr(
+        "custom_components.retele_electrice.coordinator.dr.async_get",
+        lambda hass: fake_registry,
+    )
+
+    coordinator.config_entry = MagicMock(entry_id="test_entry_id")
+
+    coordinator._update_device_registry({})
+
+    fake_registry.async_get_device_by_identifier.assert_called_once_with(
+        (DOMAIN, POD), "test_entry_id"
+    )
+    fake_registry.async_update_device.assert_called_once_with(
+        "fake_device_id",
+        hw_version=None,
+    )
+
+
+async def test_update_device_registry_falls_back_before_ha_2026_8(
+    coordinator, mock_hass, monkeypatch
+):
+    """HA < 2026.8 has no async_get_device_by_identifier; use async_get_device."""
+    fake_device = MagicMock()
+    fake_device.id = "fake_device_id"
+    fake_registry = MagicMock(spec=["async_get_device", "async_update_device"])
+    fake_registry.async_get_device.return_value = fake_device
     monkeypatch.setattr(
         "custom_components.retele_electrice.coordinator.dr.async_get",
         lambda hass: fake_registry,
@@ -296,6 +322,9 @@ async def test_update_device_registry_clears_hw_version_with_empty_pod_info(
 
     coordinator._update_device_registry({})
 
+    fake_registry.async_get_device.assert_called_once_with(
+        identifiers={(DOMAIN, POD)}
+    )
     fake_registry.async_update_device.assert_called_once_with(
         "fake_device_id",
         hw_version=None,
@@ -314,7 +343,7 @@ async def test_refresh_pod_info_skips_device_update_when_device_missing(
     coordinator.config_entry = fake_entry
 
     fake_registry = MagicMock()
-    fake_registry.async_get_device = MagicMock(return_value=None)
+    fake_registry.async_get_device_by_identifier = MagicMock(return_value=None)
     fake_registry.async_update_device = MagicMock()
     monkeypatch.setattr(
         "custom_components.retele_electrice.coordinator.dr.async_get",
