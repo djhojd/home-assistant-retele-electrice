@@ -13,7 +13,10 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from custom_components.retele_electrice.const import DOMAIN
-from custom_components.retele_electrice.coordinator import ReteleElectriceCoordinator
+from custom_components.retele_electrice.coordinator import (
+    ReteleElectriceCoordinator,
+    _auth_failure_since,
+)
 
 
 POD = "RO005E_TEST"
@@ -33,7 +36,7 @@ def coordinator(mock_hass, fake_api):
     coord.hass = mock_hass
     coord.api = fake_api
     coord.pod = POD
-    coord._auth_failure_since = None
+    _auth_failure_since.clear()
     return coord
 
 
@@ -714,7 +717,7 @@ async def test_async_update_data_retries_via_update_failed_on_first_auth_error(
 
     assert not isinstance(exc_info.value, ConfigEntryAuthFailed)
     assert exc_info.value.retry_after == AUTH_RETRY_INTERVAL.total_seconds()
-    assert coordinator._auth_failure_since is not None
+    assert POD in _auth_failure_since
 
 
 async def test_async_update_data_escalates_to_reauth_after_grace_period(
@@ -728,10 +731,40 @@ async def test_async_update_data_escalates_to_reauth_after_grace_period(
     from custom_components.retele_electrice.api import ReteleElectriceAuthError
 
     fake_api.login = AsyncMock(side_effect=ReteleElectriceAuthError("bad password"))
-    coordinator._auth_failure_since = datetime.now(tz=timezone.utc) - timedelta(hours=25)
+    _auth_failure_since[POD] = datetime.now(tz=timezone.utc) - timedelta(hours=25)
 
     with pytest.raises(ConfigEntryAuthFailed):
         await coordinator._async_update_data()
+
+
+async def test_auth_failure_clock_survives_coordinator_recreation(
+    mock_hass, fake_api
+):
+    """While an entry sits in setup_retry, HA builds a new coordinator on
+    every attempt. The 24h clock must carry over, or a changed password
+    never escalates to reauth after an HA restart."""
+    from homeassistant.exceptions import ConfigEntryAuthFailed
+    from homeassistant.helpers.update_coordinator import UpdateFailed
+
+    from custom_components.retele_electrice.api import ReteleElectriceAuthError
+
+    _auth_failure_since.clear()
+    fake_api.login = AsyncMock(side_effect=ReteleElectriceAuthError("bad password"))
+
+    def fresh_coordinator():
+        coord = ReteleElectriceCoordinator.__new__(ReteleElectriceCoordinator)
+        coord.hass = mock_hass
+        coord.api = fake_api
+        coord.pod = POD
+        return coord
+
+    with pytest.raises(UpdateFailed):
+        await fresh_coordinator()._async_update_data()
+
+    _auth_failure_since[POD] -= timedelta(hours=25)
+
+    with pytest.raises(ConfigEntryAuthFailed):
+        await fresh_coordinator()._async_update_data()
 
 
 async def test_async_update_data_success_resets_auth_failure_tracking(
@@ -743,8 +776,8 @@ async def test_async_update_data_success_resets_auth_failure_tracking(
     fake_api.get_consumption_data = AsyncMock(return_value=[])
     coordinator._import_statistics = AsyncMock()
     coordinator._should_refresh_pod_info_monthly = MagicMock(return_value=False)
-    coordinator._auth_failure_since = datetime.now(tz=timezone.utc) - timedelta(hours=2)
+    _auth_failure_since[POD] = datetime.now(tz=timezone.utc) - timedelta(hours=2)
 
     await coordinator._async_update_data()
 
-    assert coordinator._auth_failure_since is None
+    assert POD not in _auth_failure_since

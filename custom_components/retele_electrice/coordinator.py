@@ -54,6 +54,12 @@ ENERGY_TYPE_EXPORT = "WE"
 AUTH_RETRY_INTERVAL = timedelta(hours=1)
 AUTH_FAILURE_ESCALATE_AFTER = timedelta(hours=24)
 
+# Keyed by POD rather than held on the coordinator: while an entry sits in
+# setup_retry, HA builds a fresh coordinator on every attempt, which would
+# restart the 24h clock each time and never escalate to reauth.
+# ponytail: in-memory only, so an HA restart also restarts the 24h clock.
+_auth_failure_since: dict[str, datetime] = {}
+
 
 def _iter_months(start: date, end: date) -> Iterator[tuple[date, date]]:
     """Yield (month_start, month_end) tuples covering [start, end].
@@ -87,7 +93,6 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         """Initialize the coordinator."""
         self.api = api
         self.pod = pod
-        self._auth_failure_since: datetime | None = None
 
         super().__init__(
             hass,
@@ -137,14 +142,12 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
                             "next cycle", self.pod, exc_info=True,
                         )
 
-            self._auth_failure_since = None
+            _auth_failure_since.pop(self.pod, None)
             return result
 
         except ReteleElectriceAuthError as err:
             now = datetime.now(tz=timezone.utc)
-            if self._auth_failure_since is None:
-                self._auth_failure_since = now
-            failing_for = now - self._auth_failure_since
+            failing_for = now - _auth_failure_since.setdefault(self.pod, now)
 
             if failing_for < AUTH_FAILURE_ESCALATE_AFTER:
                 _LOGGER.warning(
