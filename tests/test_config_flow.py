@@ -205,3 +205,38 @@ async def test_reauth_confirm_password_change_required_shows_error():
 
     assert result["type"] == "form"
     assert result["errors"] == {"base": "password_change_required"}
+
+
+async def test_reconfigure_updates_password_and_reloads():
+    """Reconfigure lets the user enter a new password right after changing it
+    on the portal, without waiting for the 24h reauth fallback."""
+    flow, entry = _make_reauth_flow(_entry_data(pod_info={"meter_marca": "X"}))
+    flow.context = {"source": "reconfigure", "entry_id": entry.entry_id}
+    flow.async_update_reload_and_abort = MagicMock(
+        return_value={"type": "abort", "reason": "reconfigure_successful"}
+    )
+
+    with patch.object(
+        config_flow, "validate_input", AsyncMock(return_value={"title": "x"})
+    ):
+        result = await flow.async_step_reconfigure(
+            user_input={CONF_PASSWORD: "new-password"}
+        )
+
+    call_args, call_kwargs = flow.async_update_reload_and_abort.call_args
+    assert call_args[0] is entry
+    assert call_kwargs["data"][CONF_PASSWORD] == "new-password"
+    assert call_kwargs["data"]["pod_info"] == {"meter_marca": "X"}
+    assert result["reason"] == "reconfigure_successful"
+
+
+async def test_reconfigure_shows_password_form():
+    """No user_input yet -> show the password-only reconfigure form."""
+    flow, entry = _make_reauth_flow(_entry_data())
+    flow.context = {"source": "reconfigure", "entry_id": entry.entry_id}
+
+    result = await flow.async_step_reconfigure(user_input=None)
+
+    assert result["type"] == "form"
+    assert result["step_id"] == "reconfigure"
+    assert result["description_placeholders"][CONF_EMAIL] == "user@example.com"

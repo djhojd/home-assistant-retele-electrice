@@ -163,6 +163,7 @@ The service is synchronous and takes about 10 seconds for ~7 months of history (
 - If the password is genuinely invalid or has actually changed, auth keeps failing for a full 24 hours straight, and only then does the integration raise a **Reconfigure** notification under **Settings** > **Devices & Services**. Click it, enter the current portal password, and the integration verifies it and resumes automatically.
 - If you get that notification, first verify your email and password still work on [contulmeu.reteleelectrice.ro](https://contulmeu.reteleelectrice.ro) - if they do, the portal-side lockout may just be taking longer than usual to clear; wait it out rather than repeatedly re-entering the same password (which may prolong the lockout).
 - When the portal itself asks you to change an expired password, the integration detects it and raises the **Reconfigure** notification right away, without the 24-hour wait. Change the password on the portal first, then enter the new one in Home Assistant.
+- Changed your password on the portal yourself? Go to **Settings** > **Devices & Services** > **Retele Electrice**, open the entry's ⋮ menu and choose **Reconfigure** to enter the new one. With several PODs on the same account, do this for each entry.
 - The portal uses Salesforce login - if the portal changes its login form structure, the integration may need updating
 
 ### "VF page ViewState not found"

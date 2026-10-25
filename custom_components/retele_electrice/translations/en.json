@@ -17,6 +17,13 @@
         "data": {
           "password": "Password"
         }
+      },
+      "reconfigure": {
+        "title": "Change Retele Electrice password",
+        "description": "Enter the current contulmeu.reteleelectrice.ro password for {email}, e.g. after changing it on the portal.",
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -27,7 +34,8 @@
     },
     "abort": {
       "already_configured": "This POD is already configured.",
-      "reauth_successful": "Password updated successfully."
+      "reauth_successful": "Password updated successfully.",
+      "reconfigure_successful": "Password updated successfully."
     }
   },
   "options": {

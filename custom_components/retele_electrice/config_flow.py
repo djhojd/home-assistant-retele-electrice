@@ -136,6 +136,14 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "reauth_confirm", self._get_reauth_entry(), user_input
         )
 
+    async def async_step_reconfigure(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Let the user change the stored password without waiting for reauth."""
+        return await self._async_update_password(
+            "reconfigure", self._get_reconfigure_entry(), user_input
+        )
+
     async def _async_update_password(
         self,
         step_id: str,
