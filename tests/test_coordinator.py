@@ -267,6 +267,33 @@ async def test_money_rows_continue_from_last_sum(
     assert cost[0]["sum"] == pytest.approx(5.0 + 1.3)
 
 
+async def test_pushed_statistics_pass_ha_validation(
+    coordinator, mock_hass, make_records, monkeypatch
+):
+    """Real _push_statistics -> real async_add_external_statistics, so HA's own
+    checks (statistic_id, source, unit vs unit_class, top-of-hour tz-aware
+    starts) run on kWh and money metadata; only the recorder queue is mocked."""
+    recorder = MagicMock()
+    monkeypatch.setattr(
+        "homeassistant.components.recorder.statistics.get_instance",
+        lambda hass: recorder,
+    )
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=_baseline_returner({}))
+    _with_prices(coordinator, import_price=0.9, export_price=0.45)
+
+    records = make_records(energy_type="WI") + make_records(energy_type="WE")
+    await coordinator._import_statistics(records)
+
+    queued = {
+        c.args[0]["statistic_id"]: c.args[0]
+        for c in recorder.async_import_statistics.call_args_list
+    }
+    assert set(queued) == {IMPORT_ID, EXPORT_ID, COST_ID, COMPENSATION_ID}
+    assert queued[COST_ID]["unit_of_measurement"] == "RON"
+    assert queued[COST_ID]["unit_class"] is None
+    assert queued[IMPORT_ID]["unit_class"] == "energy"
+
+
 async def test_refresh_pod_info_persists_to_config_entry(
     coordinator, mock_hass, fake_api
 ):
