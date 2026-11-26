@@ -1,4 +1,4 @@
-// Tests for the dashboard strategy's pure functions: node --test tests/js/
+// Tests for the dashboard strategy's pure functions: node --test "tests/js/*.test.mjs"
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

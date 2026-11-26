@@ -36,4 +36,4 @@ jobs:
           node-version: "24"
 
       - name: Run dashboard strategy tests
-        run: node --test tests/js/
+        run: node --test "tests/js/*.test.mjs"
