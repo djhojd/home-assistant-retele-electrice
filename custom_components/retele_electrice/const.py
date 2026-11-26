@@ -4,6 +4,9 @@ DOMAIN = "retele_electrice"
 
 CONF_POD = "pod"
 CONF_UPDATE_INTERVAL_HOURS = "update_interval_hours"
+# Currency per kWh, in Home Assistant's configured currency. Optional options.
+CONF_IMPORT_PRICE = "import_price"
+CONF_EXPORT_PRICE = "export_price"
 
 DEFAULT_UPDATE_INTERVAL_HOURS = 24
 MIN_UPDATE_INTERVAL_HOURS = 1

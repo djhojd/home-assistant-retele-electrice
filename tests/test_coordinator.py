@@ -22,6 +22,8 @@ from custom_components.retele_electrice.coordinator import (
 POD = "RO005E_TEST"
 IMPORT_ID = f"{DOMAIN}:{POD.lower()}_import"
 EXPORT_ID = f"{DOMAIN}:{POD.lower()}_export"
+COST_ID = f"{DOMAIN}:{POD.lower()}_import_cost"
+COMPENSATION_ID = f"{DOMAIN}:{POD.lower()}_export_compensation"
 
 
 @pytest.fixture
@@ -164,6 +166,104 @@ async def test_import_statistics_no_push_when_all_records_already_recorded(
     await coordinator._import_statistics(records)
 
     coordinator._push_statistics.assert_not_called()
+
+
+def _pushes_by_id(push_mock) -> dict[str, dict]:
+    """Map statistic_id -> kwargs of each _push_statistics call."""
+    return {
+        c.kwargs["statistic_id"]: c.kwargs for c in push_mock.call_args_list
+    }
+
+
+def _with_prices(coordinator, **options):
+    coordinator.config_entry = MagicMock(options=options)
+
+
+async def test_import_writes_cost_rows_when_price_set(
+    coordinator, mock_hass, make_records
+):
+    """Import price 0.9 -> an _import_cost series of kWh × 0.9, in RON."""
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=_baseline_returner({}))
+    coordinator._push_statistics = MagicMock()
+    _with_prices(coordinator, import_price=0.9)
+
+    await coordinator._import_statistics(make_records(energy_type="WI"))
+
+    pushes = _pushes_by_id(coordinator._push_statistics)
+    assert set(pushes) == {IMPORT_ID, COST_ID}
+    cost = pushes[COST_ID]
+    assert cost["unit"] == "RON"
+    assert cost["unit_class"] is None
+    assert len(cost["stats"]) == 24
+    assert cost["stats"][0]["state"] == pytest.approx(0.09)
+    # sum of 0.1..2.4 is 30.0 kWh -> 27.0 RON
+    assert cost["stats"][-1]["sum"] == pytest.approx(27.0)
+    assert pushes[IMPORT_ID]["unit"] == "kWh"
+
+
+async def test_import_writes_compensation_rows_when_price_set(
+    coordinator, mock_hass, make_records
+):
+    """Export price 0.45 -> an _export_compensation series; no import price -> no cost."""
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=_baseline_returner({}))
+    coordinator._push_statistics = MagicMock()
+    _with_prices(coordinator, export_price=0.45)
+
+    records = make_records(energy_type="WI") + make_records(energy_type="WE")
+    await coordinator._import_statistics(records)
+
+    pushes = _pushes_by_id(coordinator._push_statistics)
+    assert set(pushes) == {IMPORT_ID, EXPORT_ID, COMPENSATION_ID}
+    assert pushes[COMPENSATION_ID]["stats"][-1]["sum"] == pytest.approx(13.5)
+
+
+async def test_no_money_rows_without_price(coordinator, mock_hass, make_records):
+    """Entry without price options -> only the kWh statistics."""
+    mock_hass.async_add_executor_job = AsyncMock(side_effect=_baseline_returner({}))
+    coordinator._push_statistics = MagicMock()
+    _with_prices(coordinator)
+
+    records = make_records(energy_type="WI") + make_records(energy_type="WE")
+    await coordinator._import_statistics(records)
+
+    assert set(_pushes_by_id(coordinator._push_statistics)) == {IMPORT_ID, EXPORT_ID}
+
+
+async def test_money_baseline_independent_of_energy(
+    coordinator, mock_hass, make_records
+):
+    """kWh already recorded up to hour 11, price just set (no money rows yet):
+    kWh gets hours 12-23 only, cost covers all 24 hours of the batch."""
+    last_ts = datetime(2026, 4, 1, 8, 0, tzinfo=timezone.utc)
+    mock_hass.async_add_executor_job = AsyncMock(
+        side_effect=_baseline_returner({IMPORT_ID: [{"start": last_ts, "sum": 7.8}]})
+    )
+    coordinator._push_statistics = MagicMock()
+    _with_prices(coordinator, import_price=0.9)
+
+    await coordinator._import_statistics(make_records(energy_type="WI"))
+
+    pushes = _pushes_by_id(coordinator._push_statistics)
+    assert len(pushes[IMPORT_ID]["stats"]) == 12
+    assert len(pushes[COST_ID]["stats"]) == 24
+
+
+async def test_money_rows_continue_from_last_sum(
+    coordinator, mock_hass, make_records
+):
+    """Existing cost baseline -> only newer hours, sum continues from it."""
+    last_ts = datetime(2026, 4, 1, 8, 0, tzinfo=timezone.utc)
+    mock_hass.async_add_executor_job = AsyncMock(
+        side_effect=_baseline_returner({COST_ID: [{"start": last_ts, "sum": 5.0}]})
+    )
+    coordinator._push_statistics = MagicMock()
+    _with_prices(coordinator, import_price=1.0)
+
+    await coordinator._import_statistics(make_records(energy_type="WI"))
+
+    cost = _pushes_by_id(coordinator._push_statistics)[COST_ID]["stats"]
+    assert len(cost) == 12
+    assert cost[0]["sum"] == pytest.approx(5.0 + 1.3)
 
 
 async def test_refresh_pod_info_persists_to_config_entry(
@@ -400,8 +500,8 @@ async def test_backfill_history_wipes_then_imports_in_order(
 
     # Wipe must run before import.
     assert calls[0][0] == "wipe", "wipe must run before import"
-    assert calls[0][1] == (EXPORT_ID, IMPORT_ID), \
-        "wipe should target both stat IDs (sorted)"
+    assert calls[0][1] == (EXPORT_ID, COMPENSATION_ID, IMPORT_ID, COST_ID), \
+        "wipe should target the kWh and money stat IDs (sorted)"
     assert calls[1] == ("import", 3), "all 3 monthly records imported in one call"
 
     # API called once per month, in chronological order.

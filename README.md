@@ -67,6 +67,21 @@ Click the badge above to open the setup dialog filtered to this integration, the
 - **POD** - your Point of Delivery ID (e.g. `RO005EXXXXXXXXX`)
 - **Update interval** - how often to fetch data, in hours (default: 24). You can change this later via **Settings** > **Devices & Services** > **Retele Electrice** > **Configure**.
 
+### Prices (optional)
+
+Under **Configure** you can also set an **import price** and an **export price** per kWh, in your Home Assistant currency. With a price set, each sync writes a money statistic next to the kWh one:
+
+| Statistic | Value per hour |
+|---|---|
+| `retele_electrice:<your-pod>_import_cost` | imported kWh × import price |
+| `retele_electrice:<your-pod>_export_compensation` | exported kWh × export price |
+
+Use them in `statistic` and `statistics-graph` cards like the kWh statistics.
+
+- A price applies to the hours written after you save it. Hours already written keep the price they had. The portal publishes with a few days' delay, so the last few days before a price change get the new price.
+- The first sync after you set a price covers the last 14 days. To price all history at the current price, run [`backfill_history`](#retele_electricebackfill_history).
+- Clearing a price stops new money rows. Existing rows stay.
+
 <details>
 <summary>Manual navigation (without the badge)</summary>
 
@@ -92,7 +107,7 @@ The integration imports data as **external statistics** with the metadata Home A
 4. **Save**. Charts populate immediately for the date range covered by imported statistics.
 
 What you don't get yet:
-- **Cost tracking** - The integration doesn't fetch tariffs. Set a fixed `RON / kWh` price in the Energy config's "Use a static price" option if you want cost.
+- **Cost tracking** - The integration doesn't fetch tariffs. Set fixed prices under **Configure** to get cost and compensation statistics (see [Prices](#prices-optional)).
 - **Live data** - The portal publishes with a few days' delay, so today's bar stays empty until the portal catches up.
 - **Solar production** - Add your inverter's integration as **Solar production** independently.
 

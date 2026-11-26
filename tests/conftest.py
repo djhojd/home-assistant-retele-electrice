@@ -62,6 +62,7 @@ def mock_hass():
     Tests override these per-test as needed.
     """
     hass = MagicMock()
+    hass.config.currency = "RON"
     hass.config_entries.async_entries = MagicMock(return_value=[])
     hass.async_add_executor_job = AsyncMock(return_value={})
     hass.services.has_service = MagicMock(return_value=False)

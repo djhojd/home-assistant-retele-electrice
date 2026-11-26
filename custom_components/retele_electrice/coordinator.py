@@ -36,7 +36,7 @@ from .api import (
     ReteleElectriceAuthError,
     ReteleElectricePasswordChangeRequired,
 )
-from .const import DOMAIN
+from .const import CONF_EXPORT_PRICE, CONF_IMPORT_PRICE, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -273,9 +273,14 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             self.pod, from_date.isoformat(),
         )
 
+        # Money statistics are rebuilt too, at the current price: backfill is
+        # the deliberate way to reprice all history.
+        prefix = f"{DOMAIN}:{self.pod.lower()}"
         targets = [
-            f"{DOMAIN}:{self.pod.lower()}_import",
-            f"{DOMAIN}:{self.pod.lower()}_export",
+            f"{prefix}_import",
+            f"{prefix}_export",
+            f"{prefix}_import_cost",
+            f"{prefix}_export_compensation",
         ]
         recorder = get_instance(self.hass)
         # Recorder.async_clear_statistics is a @callback that queues the wipe on
@@ -377,9 +382,17 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
         Append-only: existing recorder rows are never overwritten. Each cycle
         only inserts hours strictly newer than the latest already-recorded
         `start`, with cumulative sums continuing from the last recorded `sum`.
+
+        When an import/export price is set in the entry options, a money
+        statistic (kWh × price, in HA's currency) is written alongside, with
+        its own baseline: a price set today has no rows yet, so it covers
+        every hour in this batch even though the kWh rows exist already.
+        Rows keep the price they were written with.
         """
-        import_id = f"{DOMAIN}:{self.pod.lower()}_import"
-        export_id = f"{DOMAIN}:{self.pod.lower()}_export"
+        prefix = f"{DOMAIN}:{self.pod.lower()}"
+        entry = getattr(self, "config_entry", None)
+        options = entry.options if entry is not None else {}
+        currency = self.hass.config.currency
 
         # Per-stat baseline (last_ts, last_sum). `last_ts` is timezone-aware UTC.
         # In recent HA versions, `start` is a Unix timestamp (float); older
@@ -400,11 +413,31 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             last_sum = row.get("sum") or 0.0
             return last_ts, float(last_sum)
 
-        import_last_ts, import_sum = await _baseline(import_id)
-        export_last_ts, export_sum = await _baseline(export_id)
+        # (energy_type, statistic_id, name, factor, unit, unit_class)
+        specs = [
+            (ENERGY_TYPE_IMPORT, f"{prefix}_import",
+             f"Retele Electrice {self.pod} Import", 1.0, "kWh", "energy"),
+            (ENERGY_TYPE_EXPORT, f"{prefix}_export",
+             f"Retele Electrice {self.pod} Export", 1.0, "kWh", "energy"),
+        ]
+        if (price := options.get(CONF_IMPORT_PRICE)) is not None:
+            specs.append((ENERGY_TYPE_IMPORT, f"{prefix}_import_cost",
+                          f"Retele Electrice {self.pod} Import cost",
+                          float(price), currency, None))
+        if (price := options.get(CONF_EXPORT_PRICE)) is not None:
+            specs.append((ENERGY_TYPE_EXPORT, f"{prefix}_export_compensation",
+                          f"Retele Electrice {self.pod} Export compensation",
+                          float(price), currency, None))
 
-        import_stats: list[StatisticData] = []
-        export_stats: list[StatisticData] = []
+        series: list[dict[str, Any]] = []
+        for energy_type, stat_id, name, factor, unit, unit_class in specs:
+            last_ts, last_sum = await _baseline(stat_id)
+            series.append({
+                "energy_type": energy_type, "statistic_id": stat_id,
+                "name": name, "factor": factor, "unit": unit,
+                "unit_class": unit_class, "last_ts": last_ts,
+                "sum": last_sum, "stats": [],
+            })
 
         for record in records:
             energy_type = record.get("energyType", "")
@@ -439,6 +472,11 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             if not hourly_values:
                 continue
 
+            targets = [s for s in series if s["energy_type"] == energy_type]
+            if not targets:
+                _LOGGER.debug("Unknown energyType %r — skipping", energy_type)
+                continue
+
             for hour_idx, value in enumerate(hourly_values):
                 start_naive = day_start + timedelta(hours=hour_idx)
                 try:
@@ -448,49 +486,32 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
                 except pytz.exceptions.NonExistentTimeError:
                     continue
 
-                if energy_type == ENERGY_TYPE_IMPORT:
-                    if import_last_ts is not None and start_aware <= import_last_ts:
+                for s in targets:
+                    if s["last_ts"] is not None and start_aware <= s["last_ts"]:
                         continue
-                    import_sum = round(import_sum + value, 6)
-                    import_stats.append(
-                        StatisticData(
-                            start=start_aware,
-                            state=value,
-                            sum=import_sum,
-                        )
+                    amount = round(value * s["factor"], 6)
+                    s["sum"] = round(s["sum"] + amount, 6)
+                    s["stats"].append(
+                        StatisticData(start=start_aware, state=amount, sum=s["sum"])
                     )
-                elif energy_type == ENERGY_TYPE_EXPORT:
-                    if export_last_ts is not None and start_aware <= export_last_ts:
-                        continue
-                    export_sum = round(export_sum + value, 6)
-                    export_stats.append(
-                        StatisticData(
-                            start=start_aware,
-                            state=value,
-                            sum=export_sum,
-                        )
-                    )
-                else:
-                    _LOGGER.debug("Unknown energyType %r — skipping", energy_type)
 
-        if import_stats:
-            self._push_statistics(
-                statistic_id=import_id,
-                name=f"Retele Electrice {self.pod} Import",
-                stats=import_stats,
-            )
-        if export_stats:
-            self._push_statistics(
-                statistic_id=export_id,
-                name=f"Retele Electrice {self.pod} Export",
-                stats=export_stats,
-            )
+        for s in series:
+            if s["stats"]:
+                self._push_statistics(
+                    statistic_id=s["statistic_id"],
+                    name=s["name"],
+                    stats=s["stats"],
+                    unit=s["unit"],
+                    unit_class=s["unit_class"],
+                )
 
     def _push_statistics(
         self,
         statistic_id: str,
         name: str,
         stats: list[StatisticData],
+        unit: str = "kWh",
+        unit_class: str | None = "energy",
     ) -> None:
         """Register metadata and push statistics into HA recorder."""
         metadata = StatisticMetaData(
@@ -500,8 +521,8 @@ class ReteleElectriceCoordinator(DataUpdateCoordinator):
             name=name,
             source=DOMAIN,
             statistic_id=statistic_id,
-            unit_class="energy",
-            unit_of_measurement="kWh",
+            unit_class=unit_class,
+            unit_of_measurement=unit,
         )
         _LOGGER.debug(
             "Pushing %d hourly records for statistic '%s'", len(stats), statistic_id

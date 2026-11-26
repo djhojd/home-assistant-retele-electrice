@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import voluptuous as vol
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
 
 from custom_components.retele_electrice import config_flow
@@ -13,6 +14,8 @@ from custom_components.retele_electrice.config_flow import (
     OptionsFlowHandler,
 )
 from custom_components.retele_electrice.const import (
+    CONF_EXPORT_PRICE,
+    CONF_IMPORT_PRICE,
     CONF_POD,
     CONF_UPDATE_INTERVAL_HOURS,
     DEFAULT_UPDATE_INTERVAL_HOURS,
@@ -187,6 +190,30 @@ async def test_options_flow_saves_new_interval():
 
     assert result["type"] == "create_entry"
     assert result["data"] == {CONF_UPDATE_INTERVAL_HOURS: 48}
+
+
+async def test_options_flow_shows_current_prices_as_suggestions():
+    """Saved prices come back as suggested values (not defaults), so the user
+    can clear them; an unset price suggests nothing."""
+    entry = _make_entry(options={CONF_IMPORT_PRICE: 0.9})
+    handler = OptionsFlowHandler(entry)
+    result = await handler.async_step_init(user_input=None)
+
+    keys = {str(k): k for k in result["data_schema"].schema}
+    assert keys[CONF_IMPORT_PRICE].description == {"suggested_value": 0.9}
+    assert keys[CONF_EXPORT_PRICE].description == {"suggested_value": None}
+    assert keys[CONF_EXPORT_PRICE].default is vol.UNDEFINED
+
+
+async def test_options_flow_cleared_price_drops_key():
+    """Submitting without a price replaces options without that key."""
+    entry = _make_entry(options={CONF_IMPORT_PRICE: 0.9, CONF_EXPORT_PRICE: 0.45})
+    handler = OptionsFlowHandler(entry)
+    result = await handler.async_step_init(
+        user_input={CONF_UPDATE_INTERVAL_HOURS: 24, CONF_EXPORT_PRICE: 0.45}
+    )
+
+    assert result["data"] == {CONF_UPDATE_INTERVAL_HOURS: 24, CONF_EXPORT_PRICE: 0.45}
 
 
 async def test_reauth_confirm_password_change_required_shows_error():

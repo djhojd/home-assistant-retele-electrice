@@ -17,6 +17,8 @@ from homeassistant.helpers.selector import (
 )
 
 from .const import (
+    CONF_EXPORT_PRICE,
+    CONF_IMPORT_PRICE,
     CONF_POD,
     CONF_UPDATE_INTERVAL_HOURS,
     DEFAULT_UPDATE_INTERVAL_HOURS,
@@ -217,12 +219,26 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             return self.async_create_entry(title="", data=user_input)
 
         current = current_update_interval_hours(self.config_entry)
+        options = self.config_entry.options
+        price_field = NumberSelector(
+            NumberSelectorConfig(min=0, step="any", mode=NumberSelectorMode.BOX)
+        )
 
+        # suggested_value, not default: a default would refill a cleared box,
+        # and an empty price must mean "no money statistic".
         schema = vol.Schema(
             {
                 vol.Required(
                     CONF_UPDATE_INTERVAL_HOURS, default=current
                 ): _update_interval_field(),
+                vol.Optional(
+                    CONF_IMPORT_PRICE,
+                    description={"suggested_value": options.get(CONF_IMPORT_PRICE)},
+                ): price_field,
+                vol.Optional(
+                    CONF_EXPORT_PRICE,
+                    description={"suggested_value": options.get(CONF_EXPORT_PRICE)},
+                ): price_field,
             }
         )
 

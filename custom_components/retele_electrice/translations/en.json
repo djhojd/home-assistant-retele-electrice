@@ -42,7 +42,13 @@
     "step": {
       "init": {
         "data": {
-          "update_interval_hours": "Update interval (hours)"
+          "update_interval_hours": "Update interval (hours)",
+          "import_price": "Import price per kWh",
+          "export_price": "Export price per kWh"
+        },
+        "data_description": {
+          "import_price": "In your Home Assistant currency. Adds an import cost statistic. Leave empty for none.",
+          "export_price": "In your Home Assistant currency. Adds an export compensation statistic. Leave empty for none."
         }
       }
     }
