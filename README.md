@@ -113,7 +113,7 @@ What you don't get yet:
 
 ### Recommended dashboards
 
-For richer per-POD dashboards (last sync, manual sync button, period totals, multi-range charts), see [`DASHBOARDS.md`](DASHBOARDS.md) for ready-to-paste Lovelace YAML. Two variants per POD type (prosumer / non-prosumer): a recommended **Starter** and an optional **Explorer**. All snippets use only Home Assistant's built-in cards - no HACS dependencies.
+For a per-POD dashboard (sync status, period totals, charts, a date-range explorer, year-over-year comparisons and meter details), see [`DASHBOARDS.md`](DASHBOARDS.md) for ready-to-paste Lovelace YAML: one full dashboard for prosumer PODs and one for non-prosumer PODs, plus a cost and compensation add-on. All snippets use only Home Assistant's built-in cards, with no HACS dependencies.
 
 ## Entities
 
