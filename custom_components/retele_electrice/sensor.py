@@ -144,6 +144,9 @@ class ReteleElectriceSensor(CoordinatorEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_has_entity_name = True
     _attr_name = "Last Sync"
+    # translation_keys are stable lookup keys for the dashboard strategy
+    # (entity IDs can be renamed); _attr_name still decides the shown name.
+    _attr_translation_key = "last_sync"
     _attr_icon = "mdi:sync"
 
     def __init__(self, coordinator: ReteleElectriceCoordinator, pod: str, entry_data: dict) -> None:
@@ -166,6 +169,7 @@ class PodInfoSensor(SensorEntity):
 
     _attr_has_entity_name = True
     _attr_name = "POD Info Last Sync"
+    _attr_translation_key = "pod_info"
     _attr_icon = "mdi:information-outline"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_should_poll = False
@@ -229,6 +233,7 @@ class PodFieldSensor(SensorEntity):
         self._descriptor = descriptor
         self._attr_unique_id = f"retele_electrice_{pod}_{descriptor.suffix}"
         self._attr_name = descriptor.name
+        self._attr_translation_key = descriptor.suffix
         self._attr_icon = descriptor.icon
         self._attr_device_class = descriptor.device_class
         self._attr_native_unit_of_measurement = descriptor.unit

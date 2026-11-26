@@ -31,6 +31,7 @@ class ReteleElectriceSyncButton(ButtonEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Sync Data"
+    _attr_translation_key = "sync_data"  # stable key for the dashboard strategy
     _attr_icon = "mdi:cloud-sync"
 
     def __init__(self, coordinator: ReteleElectriceCoordinator, pod: str, entry_data: dict) -> None:
@@ -51,6 +52,7 @@ class RefreshPodInfoButton(ButtonEntity):
 
     _attr_has_entity_name = True
     _attr_name = "Refresh POD Info"
+    _attr_translation_key = "refresh_pod_info"
     _attr_icon = "mdi:database-refresh"
 
     def __init__(self, coordinator, pod, entry_data):
