@@ -6,6 +6,8 @@
   ],
   "config_flow": true,
   "dependencies": [
+    "frontend",
+    "http",
     "recorder"
   ],
   "documentation": "https://github.com/djhojd/home-assistant-retele-electrice",

@@ -115,6 +115,22 @@ What you don't get yet:
 
 For a per-POD dashboard (sync status, period totals, charts, a date-range explorer, year-over-year comparisons and meter details), see [`DASHBOARDS.md`](DASHBOARDS.md) for ready-to-paste Lovelace YAML: one full dashboard for prosumer PODs and one for non-prosumer PODs, plus a cost and compensation add-on. All snippets use only Home Assistant's built-in cards, with no HACS dependencies.
 
+## Dashboard
+
+The integration ships a ready-made dashboard that builds itself from your PODs: sync status, period totals, charts, cost and compensation (when prices are set), a date-range explorer, year-over-year comparisons and meter details. PODs without hourly data get just their meter details. New PODs and new statistics show up without any editing.
+
+1. **Settings** > **Dashboards** > **Add dashboard**.
+2. Pick **Retele Electrice** under **Community dashboards**, name it, **Create**.
+
+If it isn't listed, pick **New dashboard from scratch** instead, open it, then ⋮ > **Edit dashboard** > ⋮ > **Raw configuration editor**, and replace the contents with:
+
+```yaml
+strategy:
+  type: custom:retele-electrice
+```
+
+To customize it, use ⋮ > **Edit dashboard** > **Take control**. That turns it into a regular dashboard you can edit, but it stops updating itself. The YAML in [`DASHBOARDS.md`](DASHBOARDS.md) is the same layout if you'd rather start from YAML.
+
 ## Entities
 
 | Entity | Type | Description |

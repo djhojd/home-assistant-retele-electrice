@@ -3,10 +3,16 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from pathlib import Path
 
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.typing import ConfigType
+from homeassistant.loader import async_get_integration
 
 from .api import ReteleElectriceApi
 from .const import (
@@ -47,6 +53,22 @@ async def _has_existing_stats(hass: HomeAssistant, pod: str) -> bool:
 
 
 PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.BUTTON]
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+STRATEGY_URL = "/retele_electrice/retele-electrice-strategy.js"
+STRATEGY_PATH = Path(__file__).parent / "frontend" / "retele-electrice-strategy.js"
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Serve the dashboard strategy and load it on every frontend page."""
+    integration = await async_get_integration(hass, DOMAIN)
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(STRATEGY_URL, str(STRATEGY_PATH), True)]
+    )
+    # Static files are cached long-term; the version makes each release refetch.
+    add_extra_js_url(hass, f"{STRATEGY_URL}?v={integration.version}")
+    return True
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
