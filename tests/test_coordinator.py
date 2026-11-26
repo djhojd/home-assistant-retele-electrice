@@ -7,6 +7,7 @@ coordinator's `_push_statistics` helper.
 """
 from __future__ import annotations
 
+from datetime import date as _real_date
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -16,8 +17,8 @@ from custom_components.retele_electrice.const import DOMAIN
 from custom_components.retele_electrice.coordinator import (
     ReteleElectriceCoordinator,
     _auth_failure_since,
+    _iter_months,
 )
-
 
 POD = "RO005E_TEST"
 IMPORT_ID = f"{DOMAIN}:{POD.lower()}_import"
@@ -517,8 +518,8 @@ async def test_backfill_history_partial_failure_keeps_collected_records(
 ):
     """If api raises mid-loop, accumulated records are still imported and
     a WARNING is logged."""
-    from datetime import date as _date
     import logging
+    from datetime import date as _date
 
     class _FakeDate(_date):
         @classmethod
@@ -549,11 +550,6 @@ async def test_backfill_history_partial_failure_keeps_collected_records(
     imported_records = coordinator._import_statistics.call_args.args[0]
     assert len(imported_records) == 1, "only month-1 records preserved"
     assert "Backfill: failed" in caplog.text
-
-
-from datetime import date as _real_date
-
-from custom_components.retele_electrice.coordinator import _iter_months
 
 
 @pytest.mark.parametrize("start, end, expected", [
@@ -590,8 +586,8 @@ async def test_backfill_history_bails_after_three_consecutive_empty_months(
     coordinator, mock_hass, fake_api, monkeypatch, caplog
 ):
     """3 consecutive empty months -> loop breaks; subsequent months not fetched."""
-    from datetime import date as _date
     import logging
+    from datetime import date as _date
 
     class _FakeDate(_date):
         @classmethod

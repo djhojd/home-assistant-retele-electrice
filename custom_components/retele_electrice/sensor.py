@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -11,9 +11,9 @@ from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN, CONF_POD
-from .coordinator import ReteleElectriceCoordinator
 from ._device import build_device_info
+from .const import CONF_POD, DOMAIN
+from .coordinator import ReteleElectriceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

@@ -5,13 +5,9 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 
+import homeassistant.helpers.config_validation as cv
 import pytz
 import voluptuous as vol
-
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
-import homeassistant.helpers.config_validation as cv
-
 from homeassistant.components.recorder.db_schema import (
     Statistics,
     StatisticsMeta,
@@ -20,8 +16,10 @@ from homeassistant.components.recorder.db_schema import (
 from homeassistant.components.recorder.statistics import list_statistic_ids
 from homeassistant.components.recorder.tasks import RecorderTask
 from homeassistant.components.recorder.util import get_instance, session_scope
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 
-from .const import DOMAIN, CONF_POD, stat_id_prefix
+from .const import CONF_POD, DOMAIN, stat_id_prefix
 
 _LOGGER = logging.getLogger(__name__)
 

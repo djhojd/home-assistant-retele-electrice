@@ -5,19 +5,19 @@ import logging
 from datetime import timedelta
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import Platform, CONF_EMAIL, CONF_PASSWORD
+from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
 
+from .api import ReteleElectriceApi
 from .const import (
-    DOMAIN,
     CONF_POD,
     CONF_UPDATE_INTERVAL_HOURS,
     DEFAULT_UPDATE_INTERVAL_HOURS,
+    DOMAIN,
     MAX_UPDATE_INTERVAL_HOURS,
     MIN_UPDATE_INTERVAL_HOURS,
     current_update_interval_hours,
 )
-from .api import ReteleElectriceApi
 from .coordinator import ReteleElectriceCoordinator
 from .services import async_register_services
 
@@ -32,6 +32,7 @@ async def _has_existing_stats(hass: HomeAssistant, pod: str) -> bool:
     """
     from homeassistant.components.recorder.statistics import list_statistic_ids
     from homeassistant.components.recorder.util import get_instance
+
     from .const import stat_id_prefix
 
     recorder = get_instance(hass)
@@ -149,8 +150,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _maybe_initial_backfill():
         # Wait for pod_info if not yet on entry.data.
         if "pod_info" not in entry.data:
-            from homeassistant.helpers.dispatcher import async_dispatcher_connect
             import asyncio
+
+            from homeassistant.helpers.dispatcher import async_dispatcher_connect
             ready = asyncio.Event()
             signal = f"retele_electrice_pod_info_updated_{entry.entry_id}"
             unsub = async_dispatcher_connect(hass, signal, lambda *_: ready.set())

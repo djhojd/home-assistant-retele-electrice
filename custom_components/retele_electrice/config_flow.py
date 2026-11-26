@@ -4,7 +4,6 @@ from collections.abc import Mapping
 from typing import Any
 
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
@@ -16,6 +15,11 @@ from homeassistant.helpers.selector import (
     NumberSelectorMode,
 )
 
+from .api import (
+    ReteleElectriceApi,
+    ReteleElectriceAuthError,
+    ReteleElectricePasswordChangeRequired,
+)
 from .const import (
     CONF_EXPORT_PRICE,
     CONF_IMPORT_PRICE,
@@ -26,11 +30,6 @@ from .const import (
     MAX_UPDATE_INTERVAL_HOURS,
     MIN_UPDATE_INTERVAL_HOURS,
     current_update_interval_hours,
-)
-from .api import (
-    ReteleElectriceApi,
-    ReteleElectriceAuthError,
-    ReteleElectricePasswordChangeRequired,
 )
 
 _LOGGER = logging.getLogger(__name__)

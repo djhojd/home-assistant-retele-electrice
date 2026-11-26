@@ -11,6 +11,7 @@ dev = [
     "homeassistant>=2026.1.0",
     "beautifulsoup4>=4.12.3",
     "pytz>=2024.1",
+    "ruff>=0.17.6",
 ]
 
 [tool.uv]
@@ -19,6 +20,10 @@ dev = [
 # (the bump was a build-system upgrade only). Override unblocks installs without
 # requiring a C compiler on the host.
 override-dependencies = ["lru-dict>=1.4.1"]
+
+[tool.ruff.lint]
+# Mechanical slips only (unused/undefined names, import order); style stays manual.
+select = ["E4", "E7", "E9", "F", "I"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

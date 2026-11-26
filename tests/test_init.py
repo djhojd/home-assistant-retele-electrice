@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
+from unittest.mock import MagicMock
 
 from custom_components.retele_electrice import async_migrate_entry
 from custom_components.retele_electrice.const import (

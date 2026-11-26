@@ -1,14 +1,15 @@
 """Button platform for Retele Electrice."""
 import logging
+
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN, CONF_POD
-from .coordinator import ReteleElectriceCoordinator
 from ._device import build_device_info
+from .const import CONF_POD, DOMAIN
+from .coordinator import ReteleElectriceCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 

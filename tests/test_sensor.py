@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date
 from unittest.mock import MagicMock
 
-import pytest
+from homeassistant.components.sensor import SensorDeviceClass
 
 from custom_components.retele_electrice.sensor import (
     _MAX_STATE_LEN,
@@ -12,8 +12,6 @@ from custom_components.retele_electrice.sensor import (
     PodFieldSensor,
     _build_pod_field_sensors,
 )
-from homeassistant.components.sensor import SensorDeviceClass
-
 
 POD = "RO005EXXXXXXXXX"
 

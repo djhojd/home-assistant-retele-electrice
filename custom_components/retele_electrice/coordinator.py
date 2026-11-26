@@ -18,18 +18,21 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import pytz
-
-from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
-from homeassistant.components.recorder.models import StatisticData, StatisticMeanType, StatisticMetaData
+from homeassistant.components.recorder.models import (
+    StatisticData,
+    StatisticMeanType,
+    StatisticMetaData,
+)
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
 )
 from homeassistant.components.recorder.util import get_instance
+from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryAuthFailed
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .api import (
     ReteleElectriceApi,
